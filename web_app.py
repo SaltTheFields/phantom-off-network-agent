@@ -292,6 +292,107 @@ tr:hover td{background:#121212; color: #fff;}
 .pline.lv-warn {color:#ffd93d}
 .pline.lv-note {color:#4ecdc4}
 .pline.lv-info {color:#666}
+
+/* ── Nav ── */
+nav{
+  background:#0f0f0f;
+  padding:7px 24px;
+  border-bottom:1px solid #1c1c1c;
+  display:flex;
+  gap:0;
+  align-items:center;
+}
+nav a{
+  color:#666;font-size:12px;
+  padding:4px 14px;
+  border-right:1px solid #1a1a1a;
+}
+nav a:first-child{padding-left:0}
+nav a.active,nav a:hover{color:#fff;text-decoration:none}
+.live-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:#252525;
+  margin-left:auto;
+  transition:background .4s;
+}
+.live-dot.on{background:#6bcb77;box-shadow:0 0 6px #6bcb7766;animation:dotPulse 1.4s ease-in-out infinite}
+@keyframes dotPulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── Badges ── */
+.b{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:bold;letter-spacing:.02em}
+.b-high    {background:#280e0e;color:#ff6b6b}
+.b-medium  {background:#1e1c08;color:#ffd93d}
+.b-low     {background:#0c1c0c;color:#6bcb77}
+.b-queued  {background:var(--accent-bg);color:var(--accent)}
+.b-active  {background:#0c1c0c;color:#6bcb77}
+.b-archived{background:#141414;color:#444}
+
+/* ── Buttons ── */
+form{display:inline}
+button,input[type=submit]{
+  background:#141414;color:var(--accent);
+  border:1px solid var(--accent-border);
+  padding:5px 12px;cursor:pointer;
+  font-family:inherit;font-size:11px;border-radius:3px;
+  transition:background .15s,border-color .15s;
+}
+button:hover,input[type=submit]:hover{background:var(--accent-bg);border-color:var(--accent-dim)}
+.btn-sm{padding:2px 7px;font-size:10px}
+.btn-danger{background:#180a0a;color:#ff6b6b;border-color:#360e0e}
+.btn-danger:hover{background:#280c0c}
+.btn-green{background:#0c1a0c;color:#6bcb77;border-color:#1a3e1a}
+.btn-green:hover{background:#122212}
+.btn-dim{background:#111;color:#666;border-color:#1e1e1e}
+.btn-dim:hover{background:#171717;color:#999}
+
+/* ── Inputs ── */
+input[type=text],select{
+  background:#111;color:#ccc;border:1px solid #222;
+  padding:5px 9px;font-family:inherit;font-size:12px;border-radius:3px;
+}
+input[type=text]:focus,select:focus{outline:none;border-color:var(--accent-dim)}
+.row{display:flex;gap:10px;align-items:center;margin-bottom:9px;flex-wrap:wrap}
+.row label{color:#666;min-width:65px;font-size:12px}
+details summary{cursor:pointer;color:var(--accent);padding:4px 0;user-select:none;font-size:12px}
+
+/* ── Misc ── */
+pre{
+  background:#0c0c0c;padding:12px;overflow-x:auto;border-radius:4px;
+  border:1px solid #181818;white-space:pre-wrap;word-break:break-word;
+  line-height:1.5;max-height:480px;overflow-y:auto;font-size:12px;
+}
+.tag{display:inline-block;background:#141414;color:#555;padding:1px 5px;border-radius:3px;font-size:10px;margin:1px}
+.alert{padding:8px 13px;border-radius:4px;margin-bottom:12px;border:1px solid}
+.alert-info {background:var(--accent-bg);border-color:var(--accent-border);color:var(--accent)}
+.alert-ok   {background:#0c1a0c;border-color:#1c421c;color:#6bcb77}
+.alert-warn {background:#1c1a08;border-color:#484620;color:#ffd93d}
+.empty{color:#2e2e2e;font-style:italic;padding:12px 0;font-size:12px}
+.meta-grid{
+  background:#0f0f0f;border:1px solid #1c1c1c;padding:12px;border-radius:4px;
+  margin-bottom:14px;display:grid;grid-template_columns:1fr 1fr;gap:6px 18px;
+}
+.meta-grid .lbl{color:#444}
+
+/* ── Depth overview ── */
+.depth-overview{
+  background:#0d0d0d;border:1px solid #1a1a1a;border-radius:4px;
+  padding:10px 14px;margin-bottom:14px;
+}
+.depth-row{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11px}
+.depth-row .dlbl{color:#555;width:52px;flex-shrink:0}
+.depth-bar-fill{height:6px;border-radius:3px;background:var(--accent-dim);min-width:2px;transition:width .4s}
+.depth-bar-fill.deep-fill{background:#ffd93d}
+.depth-row .dcount{color:#555;font-size:10px;min-width:20px;text-align:right}
+
+/* ── Log colors ── */
+.lc-run       {color:var(--accent)}
+.lc-start     {color:#8ec8e8}
+.lc-done      {color:#6bcb77}
+.lc-fail      {color:#ff6b6b}
+.lc-tool      {color:#353535}
+.lc-note      {color:#4ecdc4}
+.lc-info      {color:#7a7a7a}
+.lc-warn      {color:#ffd93d}
 </style>"""
 
 
