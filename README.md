@@ -122,6 +122,20 @@ py agent.py --schedule
 
 ---
 
+## Web Dashboard
+
+Phantom includes a local, privacy-first web dashboard (default: `http://localhost:7777`) featuring:
+
+- **Live Research Feed**: Real-time tool calls and agent reasoning.
+- **Auto-Tailing Log**: Continuous stream of the daily JSONL log.
+- **Knowledge Depth**: Visual distribution of your vault's research maturity.
+- **Dynamic Accent**: The UI color shifts based on the time of day.
+- **Responsive Logo**: The ASCII title animates and glows when active.
+- **In-Browser Editor**: Edit note content and metadata directly from the vault view.
+- **Full Configuration**: Update `config.json` and `agents.json` without leaving the browser.
+
+---
+
 ## How it works
 
 Phantom uses the **ReAct pattern** (Reason + Act). For every message it:

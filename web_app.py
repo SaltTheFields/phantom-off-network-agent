@@ -346,11 +346,12 @@ button:hover,input[type=submit]:hover{background:var(--accent-bg);border-color:v
 .btn-dim:hover{background:#171717;color:#999}
 
 /* ── Inputs ── */
-input[type=text],select{
+input[type=text],select,textarea{
   background:#111;color:#ccc;border:1px solid #222;
   padding:5px 9px;font-family:inherit;font-size:12px;border-radius:3px;
 }
-input[type=text]:focus,select:focus{outline:none;border-color:var(--accent-dim)}
+input[type=text]:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent-dim)}
+textarea{width:100%;min-height:300px;resize:vertical;line-height:1.5}
 .row{display:flex;gap:10px;align-items:center;margin-bottom:9px;flex-wrap:wrap}
 .row label{color:#666;min-width:65px;font-size:12px}
 details summary{cursor:pointer;color:var(--accent);padding:4px 0;user-select:none;font-size:12px}
@@ -489,7 +490,7 @@ def _format_log_line(raw: str) -> str:
 
 def _nav(active: str = "") -> str:
     pages = [("/", "Dashboard"), ("/vault", "Vault"), ("/topics", "Topics"),
-             ("/memory", "Memory"), ("/agents", "Agents")]
+             ("/memory", "Memory"), ("/agents", "Agents"), ("/settings", "Settings")]
     links = "".join(
         f'<a href="{h}" class="{"active" if label.lower() == active else ""}">{label}</a>'
         for h, label in pages
@@ -805,6 +806,65 @@ setInterval(function(){
     ), "dashboard")
 
 
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page():
+    # Load raw config and agents for editing
+    try:
+        with open("config.json", "r", encoding="utf-8") as f:
+            config_raw = f.read()
+    except Exception:
+        config_raw = "{}"
+
+    try:
+        with open("agents.json", "r", encoding="utf-8") as f:
+            agents_raw = f.read()
+    except Exception:
+        agents_raw = "{}"
+
+    form = (
+        f'<form method="post" action="/settings/save">'
+        f'<h2>System Configuration (config.json)</h2>'
+        f'<textarea name="config" style="height:300px;font-family:monospace">{_html.escape(config_raw)}</textarea>'
+        f'<h2 style="margin-top:24px">Agent Roster (agents.json)</h2>'
+        f'<textarea name="agents" style="height:300px;font-family:monospace">{_html.escape(agents_raw)}</textarea>'
+        f'<div style="margin-top:20px">'
+        f'<button type="submit" class="btn-green">✔ Save All Settings</button>'
+        f'</div>'
+        f'</form>'
+    )
+    return _page("Settings", f'<h1>System Settings</h1>{form}', "settings")
+
+
+@app.post("/settings/save")
+async def settings_save(request: Request):
+    form = await request.form()
+    config_raw = str(form.get("config", "{}"))
+    agents_raw = str(form.get("agents", "{}"))
+
+    # Validate JSON before saving
+    try:
+        json.loads(config_raw)
+        json.loads(agents_raw)
+    except json.JSONDecodeError as e:
+        _run_status["last"] = f"JSON Error: {e}"
+        return RedirectResponse("/settings", status_code=303)
+
+    try:
+        with open("config.json", "w", encoding="utf-8") as f:
+            f.write(config_raw)
+        with open("agents.json", "w", encoding="utf-8") as f:
+            f.write(agents_raw)
+        
+        # Reload internal config
+        cfg.reload()
+        
+        _run_status["last"] = "Settings saved and reloaded."
+    except Exception as e:
+        _run_status["last"] = f"Save error: {e}"
+
+    return RedirectResponse("/settings", status_code=303)
+
+
 # ── Vault list ─────────────────────────────────────────────────────────────────
 
 @app.get("/vault", response_class=HTMLResponse)
@@ -869,6 +929,7 @@ def vault_note(slug: str):
         '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'
         f'<form method="post" action="/topics/{note.slug}/research">'
         f'<button class="btn-green">▶ Research Now</button></form>'
+        f'<a href="/vault/{note.slug}/edit"><button>✎ Edit Note</button></a>'
         f'<form method="post" action="/topics/{note.slug}/queue"><button>↺ Requeue</button></form>'
         f'<form method="post" action="/topics/{note.slug}/archive"><button class="btn-danger">Archive</button></form>'
         '<a href="/vault"><button class="btn-dim">← Back</button></a>'
@@ -876,6 +937,63 @@ def vault_note(slug: str):
     )
     return _page(note.name, f'<h1>{_html.escape(note.name)}</h1>{actions}{meta}'
                              f'<h2>Note Content</h2><pre>{_html.escape(note.body or "")}</pre>', "vault")
+
+
+@app.get("/vault/{slug}/edit", response_class=HTMLResponse)
+def vault_note_edit(slug: str):
+    note = _vault.read_note(slug)
+    if not note:
+        return RedirectResponse("/vault", status_code=303)
+
+    # Metadata rows
+    def _opt(val, current):
+        return f'<option value="{val}" {"selected" if val==current else ""}>{val}</option>'
+
+    status_opts = "".join(_opt(s, note.status) for s in ["queued", "active", "archived"])
+    prio_opts   = "".join(_opt(p, note.priority) for p in ["high", "medium", "low"])
+    type_opts   = "".join(_opt(t, note.type) for t in ["research", "tech", "person", "event", "concept"])
+
+    form = (
+        f'<form method="post" action="/vault/{slug}/save">'
+        f'<div class="meta-grid">'
+        f'<div><span class="lbl">Status</span> <select name="status">{status_opts}</select></div>'
+        f'<div><span class="lbl">Priority</span> <select name="priority">{prio_opts}</select></div>'
+        f'<div><span class="lbl">Type</span> <select name="type">{type_opts}</select></div>'
+        f'<div><span class="lbl">Refresh</span> <input type="text" name="refresh" value="{note.refresh_interval_days}" style="width:50px"> days</div>'
+        f'<div style="grid-column:1/-1"><span class="lbl">Tags</span> <input type="text" name="tags" value="{", ".join(note.tags)}" style="width:100%"></div>'
+        f'<div style="grid-column:1/-1"><span class="lbl">Feeds</span> <input type="text" name="feeds" value="{", ".join(note.feeds)}" style="width:100%"></div>'
+        f'</div>'
+        f'<h2>Content</h2>'
+        f'<textarea name="body">{_html.escape(note.body or "")}</textarea>'
+        f'<div style="margin-top:20px;display:flex;gap:10px">'
+        f'<button type="submit" class="btn-green">✔ Save Changes</button>'
+        f'<a href="/vault/{slug}"><button type="button" class="btn-dim">Cancel</button></a>'
+        f'</div>'
+        f'</form>'
+    )
+    return _page(f"Edit {note.name}", f'<h1>Edit: {_html.escape(note.name)}</h1>{form}', "vault")
+
+
+@app.post("/vault/{slug}/save")
+async def vault_note_save(slug: str, request: Request):
+    note = _vault.read_note(slug)
+    if not note:
+        return RedirectResponse("/vault", status_code=303)
+
+    form = await request.form()
+    note.status = str(form.get("status", "queued"))
+    note.priority = str(form.get("priority", "medium"))
+    note.type = str(form.get("type", "research"))
+    note.refresh_interval_days = int(form.get("refresh", 7))
+    note.tags = [t.strip() for t in str(form.get("tags", "")).split(",") if t.strip()]
+    note.feeds = [f.strip() for f in str(form.get("feeds", "")).split(",") if f.strip()]
+    note.body = str(form.get("body", ""))
+
+    _vault.write_note(note)
+    _vault.rebuild_backlinks()
+    _run_status["last"] = f"Saved: {note.name}"
+
+    return RedirectResponse(f"/vault/{slug}", status_code=303)
 
 
 # ── Topics ─────────────────────────────────────────────────────────────────────
