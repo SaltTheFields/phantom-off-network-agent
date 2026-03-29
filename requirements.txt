@@ -1,0 +1,14 @@
+# LLM backend — Ollama Python client
+ollama>=0.3.0
+
+# Web search — no API key, no account required
+ddgs>=0.1.0
+
+# Web content extraction
+trafilatura>=1.8.0
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+lxml>=5.0.0
+
+# Testing
+pytest>=8.0.0

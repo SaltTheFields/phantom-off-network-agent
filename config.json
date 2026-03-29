@@ -1,0 +1,49 @@
+{
+  "ollama": {
+    "base_url": "http://localhost:11434",
+    "model": "llama3.1:8b",
+    "broker_model": "phi3:mini",
+    "timeout": 300,
+    "temperature": 0.7,
+    "context_window": 4096
+  },
+  "memory": {
+    "db_path": "data/memory.db",
+    "max_short_term_messages": 20,
+    "max_long_term_results": 5,
+    "auto_save_threshold": 10
+  },
+  "agent": {
+    "max_iterations": 8,
+    "verbose": true,
+    "consensus_mode": true
+  },
+  "search": {
+    "max_results": 5,
+    "fetch_timeout": 15
+  },
+  "vault": {
+    "path": "vault",
+    "default_refresh_interval_days": 7,
+    "conflict_detection": true
+  },
+  "schedule": {
+    "max_topics_per_run": 10,
+    "stale_check_enabled": true,
+    "generate_daily_digest": true,
+    "silent_mode": true,
+    "max_parallel_workers": 1
+  },
+  "context": {
+    "path": "context.md"
+  },
+  "agents": {
+    "path": "agents.json"
+  },
+  "logging": {
+    "enabled": true,
+    "log_dir": "logs",
+    "level": "INFO",
+    "max_log_age_days": 30
+  }
+}

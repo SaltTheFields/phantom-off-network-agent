@@ -1,0 +1,428 @@
+import re
+import json
+import os
+from datetime import date, datetime
+from vault import VaultManager, Note
+from config import cfg
+
+PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+VALID_STATUSES = ("queued", "active", "archived")
+VALID_TYPES = ("research", "person", "tech", "event", "concept")
+VALID_PRIORITIES = ("high", "medium", "low")
+
+
+class TopicManager:
+    def __init__(self, vault: VaultManager):
+        self.vault = vault
+
+    # ── CRUD ──────────────────────────────────────────────────────────────────
+
+    def create_topic(
+        self,
+        name: str,
+        type: str = "research",
+        status: str = "queued",
+        priority: str = "medium",
+        tags: list[str] = None,
+        refresh_interval_days: int = None,
+    ) -> Note:
+        slug = self.vault.name_to_slug(name)
+        if self.vault.note_exists(slug):
+            raise ValueError(f"Topic already exists: {name} (slug: {slug})")
+
+        interval = refresh_interval_days or cfg.get("vault.default_refresh_interval_days", 7)
+        note = Note(
+            slug=slug,
+            name=name,
+            type=type if type in VALID_TYPES else "research",
+            status=status if status in VALID_STATUSES else "queued",
+            priority=priority if priority in VALID_PRIORITIES else "medium",
+            tags=tags or [],
+            created=str(date.today()),
+            last_researched="",
+            refresh_interval_days=int(interval),
+            body=f"# {name}\n\n*Not yet researched.*\n",
+        )
+        self.vault.write_note(note)
+        self.vault.rebuild_index()
+        self.vault.rebuild_backlinks()
+        return note
+
+    def get_topic(self, name_or_slug: str) -> Note | None:
+        # Try as slug first
+        slug = self.vault.name_to_slug(name_or_slug)
+        note = self.vault.read_note(slug)
+        if note:
+            return note
+        # Try exact slug match (already a slug)
+        note = self.vault.read_note(name_or_slug)
+        if note:
+            return note
+        # Fuzzy: case-insensitive name match across all notes
+        search = name_or_slug.lower()
+        for s in self.vault.all_slugs():
+            n = self.vault.read_note(s)
+            if n and n.name.lower() == search:
+                return n
+        # Partial match fallback
+        for s in self.vault.all_slugs():
+            n = self.vault.read_note(s)
+            if n and search in n.name.lower():
+                return n
+        return None
+
+    def list_topics(self, status: str = None, type: str = None) -> list[Note]:
+        notes = []
+        for slug in self.vault.all_slugs():
+            note = self.vault.read_note(slug)
+            if not note:
+                continue
+            if status and note.status != status:
+                continue
+            if type and note.type != type:
+                continue
+            notes.append(note)
+        return notes
+
+    def update_status(self, slug: str, status: str) -> bool:
+        note = self.vault.read_note(slug)
+        if not note:
+            return False
+        note.status = status
+        self.vault.write_note(note)
+        self.vault.rebuild_index()
+        self.vault.rebuild_backlinks()
+        return True
+
+    def archive_topic(self, slug: str) -> bool:
+        return self.update_status(slug, "archived")
+
+    def mark_researched(self, slug: str, research_date: str = None) -> bool:
+        note = self.vault.read_note(slug)
+        if not note:
+            return False
+        note.last_researched = research_date or str(date.today())
+        note.status = "active"
+        self.vault.write_note(note)
+        return True
+
+    # ── Queue management ──────────────────────────────────────────────────────
+
+    def get_next_queued(self) -> Note | None:
+        queued = self.list_topics(status="queued")
+        if not queued:
+            return None
+        # Sort: priority first, then oldest created
+        queued.sort(key=lambda n: (PRIORITY_ORDER.get(n.priority, 1), n.created))
+        return queued[0]
+
+    def get_stale_topics(self) -> list[Note]:
+        if not cfg.get("schedule.stale_check_enabled", True):
+            return []
+        today = date.today()
+        stale = []
+        for note in self.list_topics(status="active"):
+            if not note.last_researched:
+                stale.append(note)
+                continue
+            try:
+                last = datetime.strptime(note.last_researched, "%Y-%m-%d").date()
+                days_since = (today - last).days
+                if days_since >= note.refresh_interval_days:
+                    stale.append(note)
+            except ValueError:
+                stale.append(note)  # bad date → treat as stale
+        stale.sort(key=lambda n: (PRIORITY_ORDER.get(n.priority, 1), n.last_researched or ""))
+        return stale
+
+    def get_research_candidates(self) -> list[Note]:
+        """Combined queue: queued topics + stale active topics, deduplicated, priority-sorted."""
+        queued = self.list_topics(status="queued")
+        stale = self.get_stale_topics()
+        seen = set()
+        combined = []
+        for note in queued + stale:
+            if note.slug not in seen:
+                combined.append(note)
+                seen.add(note.slug)
+        combined.sort(key=lambda n: (PRIORITY_ORDER.get(n.priority, 1), n.created))
+        return combined
+
+    # ── Display ───────────────────────────────────────────────────────────────
+
+    def format_topic_list(self, topics: list[Note]) -> str:
+        if not topics:
+            return "No topics found."
+        lines = []
+        by_status: dict[str, list[Note]] = {}
+        for n in topics:
+            by_status.setdefault(n.status, []).append(n)
+
+        for status in ("queued", "active", "archived"):
+            group = by_status.get(status, [])
+            if not group:
+                continue
+            lines.append(f"\n{status.upper()} ({len(group)})")
+            lines.append("─" * 40)
+            for n in sorted(group, key=lambda x: x.name):
+                tags = f"  [{', '.join(n.tags)}]" if n.tags else ""
+                researched = f"  last: {n.last_researched}" if n.last_researched else "  never researched"
+                lines.append(f"  {n.priority:6}  {n.type:8}  {n.name}{tags}{researched}")
+        return "\n".join(lines)
+
+    def format_topic_card(self, note: Note) -> str:
+        lines = [
+            f"\n{'═' * 50}",
+            f"  {note.name}",
+            f"{'═' * 50}",
+            f"  Type     : {note.type}",
+            f"  Status   : {note.status}",
+            f"  Priority : {note.priority}",
+            f"  Tags     : {', '.join(note.tags) or 'none'}",
+            f"  Created  : {note.created}",
+            f"  Researched: {note.last_researched or 'never'}",
+            f"  Refresh  : every {note.refresh_interval_days} days",
+            "",
+        ]
+        if note.forward_links:
+            lines.append(f"  Links to : {', '.join(note.forward_links)}")
+        backlinks = self.vault._get_backlinks_for(note.slug)
+        if backlinks:
+            lines.append(f"  Linked by: {', '.join(backlinks)}")
+
+        # Preview first 300 chars of body (skip heading)
+        preview = note.body.strip()
+        preview = re.sub(r"^#[^\n]*\n", "", preview).strip()
+        if preview:
+            lines.append("")
+            lines.append("  Preview:")
+            lines.append("  " + preview[:300].replace("\n", "\n  ") + ("..." if len(preview) > 300 else ""))
+        lines.append(f"{'═' * 50}")
+        return "\n".join(lines)
+
+    def format_topic_graph(self) -> str:
+        all_notes = self.list_topics()
+        if not all_notes:
+            return "No topics in vault yet."
+
+        # Build full backlink map
+        backlink_map: dict[str, list[str]] = {}
+        for note in all_notes:
+            for link_name in note.forward_links:
+                target_slug = self.vault.name_to_slug(link_name)
+                backlink_map.setdefault(target_slug, [])
+                if note.name not in backlink_map[target_slug]:
+                    backlink_map[target_slug].append(note.name)
+
+        active_notes = [n for n in all_notes if n.status != "archived"]
+        archived_count = len(all_notes) - len(active_notes)
+
+        lines = [
+            f"\nTopic Graph ({len(active_notes)} notes)",
+            "═" * 50,
+            "",
+        ]
+
+        for note in sorted(active_notes, key=lambda n: n.name):
+            lines.append(f"{note.name} ({note.type}/{note.status})")
+            if note.forward_links:
+                fwd = ", ".join(f"[[{l}]]" for l in note.forward_links)
+                lines.append(f"  → {fwd}")
+            back = backlink_map.get(note.slug, [])
+            if back:
+                bk = ", ".join(f"[[{b}]]" for b in back)
+                lines.append(f"  ← {bk}")
+            if not note.forward_links and not backlink_map.get(note.slug):
+                lines.append("  (no links)")
+            lines.append("")
+
+        if archived_count:
+            lines.append(f"[{archived_count} archived topic(s) hidden]")
+
+        return "\n".join(lines)
+
+    # ── Bulk import ───────────────────────────────────────────────────────────
+
+    def parse_import_file(self, filepath: str) -> tuple[list[dict], list[str]]:
+        """
+        Parse a .txt or .json import file.
+        Returns (parsed_rows, errors).
+        Each row is a dict matching create_topic() kwargs.
+        """
+        if not os.path.exists(filepath):
+            return [], [f"File not found: {filepath}"]
+
+        ext = os.path.splitext(filepath)[1].lower()
+        rows = []
+        errors = []
+
+        if ext == ".json":
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if not isinstance(data, list):
+                    return [], ["JSON file must contain a top-level array of topic objects"]
+                for i, item in enumerate(data):
+                    row, err = self._validate_row(item, line_num=i + 1)
+                    if err:
+                        errors.append(err)
+                    else:
+                        rows.append(row)
+            except json.JSONDecodeError as e:
+                return [], [f"Invalid JSON: {e}"]
+
+        else:
+            # Plain text: name | type | priority | tags | refresh_days
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line_num, raw_line in enumerate(f, 1):
+                    line = raw_line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    parts = [p.strip() for p in line.split("|")]
+                    item = {"name": parts[0] if parts else ""}
+                    if len(parts) > 1 and parts[1]:
+                        item["type"] = parts[1]
+                    if len(parts) > 2 and parts[2]:
+                        item["priority"] = parts[2]
+                    if len(parts) > 3 and parts[3]:
+                        item["tags"] = [t.strip() for t in parts[3].split(",") if t.strip()]
+                    if len(parts) > 4 and parts[4].strip().isdigit():
+                        item["refresh_interval_days"] = int(parts[4].strip())
+                    row, err = self._validate_row(item, line_num=line_num)
+                    if err:
+                        errors.append(err)
+                    else:
+                        rows.append(row)
+
+        return rows, errors
+
+    def _validate_row(self, item: dict, line_num: int = 0) -> tuple[dict | None, str | None]:
+        name = item.get("name", "").strip()
+        if not name:
+            return None, f"Line {line_num}: missing topic name"
+
+        topic_type = item.get("type", "research")
+        if topic_type not in VALID_TYPES:
+            return None, f"Line {line_num}: invalid type '{topic_type}' for '{name}' (valid: {', '.join(VALID_TYPES)})"
+
+        priority = item.get("priority", "medium")
+        if priority not in VALID_PRIORITIES:
+            return None, f"Line {line_num}: invalid priority '{priority}' for '{name}' (valid: {', '.join(VALID_PRIORITIES)})"
+
+        tags = item.get("tags", [])
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",") if t.strip()]
+
+        interval = item.get("refresh_interval_days", cfg.get("vault.default_refresh_interval_days", 7))
+        try:
+            interval = int(interval)
+        except (ValueError, TypeError):
+            interval = 7
+
+        return {
+            "name": name,
+            "type": topic_type,
+            "priority": priority,
+            "tags": tags,
+            "refresh_interval_days": interval,
+        }, None
+
+    def import_topics(self, filepath: str) -> str:
+        """
+        Parse, preview, confirm, and create topics from a file.
+        Returns a status string for the CLI.
+        """
+        rows, errors = self.parse_import_file(filepath)
+
+        if not rows and errors:
+            return "Import failed:\n" + "\n".join(f"  {e}" for e in errors)
+
+        # Classify each row
+        new_rows = []
+        skip_rows = []
+        for row in rows:
+            slug = self.vault.name_to_slug(row["name"])
+            if self.vault.note_exists(slug):
+                skip_rows.append(row)
+            else:
+                new_rows.append(row)
+
+        # Preview table
+        col = 38
+        lines = [f"\nImport preview ({len(rows)} topic(s) from {os.path.basename(filepath)}):"]
+        for row in rows:
+            slug = self.vault.name_to_slug(row["name"])
+            exists = self.vault.note_exists(slug)
+            tag = "[SKIP]" if exists else "[NEW] "
+            name_col = row["name"][:col].ljust(col)
+            lines.append(
+                f"  {tag}  {name_col}  {row['type']:<9}  {row['priority']:<7}  {row['refresh_interval_days']}d"
+            )
+        if errors:
+            lines.append("\nWarnings (rows skipped):")
+            for e in errors:
+                lines.append(f"  [WARN]  {e}")
+
+        print("\n".join(lines))
+
+        if not new_rows:
+            return "Nothing to create — all topics already exist."
+
+        ans = input(f"\nCreate {len(new_rows)} new topic(s)? [y/N]: ").strip().lower()
+        if ans != "y":
+            return "Cancelled."
+
+        created = 0
+        skipped = 0
+        failed = 0
+
+        print("\nCreating...")
+        for row in rows:
+            slug = self.vault.name_to_slug(row["name"])
+            if self.vault.note_exists(slug):
+                print(f"  Skipped : {row['name']} (already exists)")
+                skipped += 1
+                continue
+            try:
+                self.create_topic(**row)
+                print(f"  Created : {row['name']}")
+                created += 1
+            except Exception as e:
+                print(f"  ERROR   : {row['name']} — {e}")
+                failed += 1
+
+        return f"\nDone. Created: {created} | Skipped: {skipped} | Errors: {failed}"
+
+    # ── Export ────────────────────────────────────────────────────────────────
+
+    def export_topics(self, status_filter: str = None) -> str:
+        """
+        Export topics to a JSON file. Returns a status string.
+        Output file is valid input for import_topics().
+        """
+        notes = self.list_topics(status=status_filter if status_filter != "all" else None)
+        if not notes:
+            label = f"{status_filter} " if status_filter and status_filter != "all" else ""
+            return f"No {label}topics to export."
+
+        today = str(date.today())
+        suffix = f"-{status_filter}" if status_filter and status_filter != "all" else ""
+        filename = f"topic-export{suffix}-{today}.json"
+
+        data = []
+        for n in sorted(notes, key=lambda x: x.name):
+            data.append({
+                "name": n.name,
+                "type": n.type,
+                "priority": n.priority,
+                "tags": n.tags,
+                "refresh_interval_days": n.refresh_interval_days,
+            })
+
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+
+        label = f"{status_filter} " if status_filter and status_filter != "all" else ""
+        return f"Exported {len(data)} {label}topic(s) to: {filename}"
+
+
