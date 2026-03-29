@@ -85,8 +85,20 @@ def _worker(
         topic_context = get_research_prompt(note.type, note.name, existing_body)
         system_prompt = build_system_prompt(topic_context=topic_context)
 
+        # Inject any new RSS feed items as context
+        feed_context = ""
+        try:
+            from rss import fetch_new_items, format_feed_context
+            feed_items = fetch_new_items(note)
+            if feed_items:
+                feed_context = format_feed_context(feed_items)
+                _p(f"→ feeds: {len(feed_items)} new item(s) from {len(note.feeds)} feed(s)")
+        except Exception:
+            pass
+
+        feed_prefix = f"\n{feed_context}\n" if feed_context else ""
         task_message = (
-            f"Please research '{note.name}' and update the vault note. "
+            f"{feed_prefix}Please research '{note.name}' and update the vault note. "
             f"Start by calling read_note to check what is already known, "
             f"then use web_search and fetch_page to gather current information, "
             f"then call update_note with your complete findings."
@@ -169,6 +181,23 @@ def _worker(
             ]
 
         memory.clear_session()
+
+        # Consensus mode: run again with a second model and merge
+        consensus_models = cfg.get("schedule.consensus_models", [])
+        if consensus_models and len(consensus_models) >= 2:
+            try:
+                from consensus import run_consensus_research
+                _p(f"→ consensus: running second model {consensus_models[1]}...")
+                c_result = run_consensus_research(note, vault, memory, topics, roster)
+                if c_result and c_result.merged_body:
+                    c_note = vault.read_note(note.slug)
+                    if c_note:
+                        c_note.body = c_result.merged_body
+                        vault.write_note(c_note)
+                    if c_result.conflicts:
+                        _p(f"  ⚡ {len(c_result.conflicts)} conflict(s) flagged between models")
+            except Exception:
+                pass  # consensus is optional — never fail the whole run
 
         updated_note = vault.read_note(note.slug)
         if updated_note:

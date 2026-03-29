@@ -26,6 +26,9 @@ class MemoryStore:
             conn.execute("PRAGMA journal_mode=WAL")
             cur = conn.cursor()
             cur.executescript("""
+                PRAGMA foreign_keys = ON;
+            """)
+            cur.executescript("""
                 CREATE TABLE IF NOT EXISTS memories (
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,
                     content     TEXT NOT NULL,
@@ -49,6 +52,12 @@ class MemoryStore:
                         INSERT INTO memories_fts(memories_fts, rowid, content, tags)
                         VALUES ('delete', old.id, old.content, old.tags);
                     END;
+
+                CREATE TABLE IF NOT EXISTS memory_embeddings (
+                    memory_id   INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+                    model       TEXT DEFAULT '',
+                    embedding   BLOB NOT NULL
+                );
 
                 CREATE TABLE IF NOT EXISTS sources (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,6 +107,16 @@ class MemoryStore:
             )
             conn.commit()
             last_id = cur.lastrowid
+
+            # Store vector embedding if sentence-transformers is available
+            try:
+                from embeddings import is_available, embed, store_embedding
+                if is_available():
+                    vec = embed(content.strip())
+                    store_embedding(conn, last_id, vec)
+            except Exception:
+                pass  # Embeddings are optional — never crash on this
+
             conn.close()
             return last_id
 
@@ -131,6 +150,60 @@ class MemoryStore:
                 rows = [dict(row) for row in cur.fetchall()]
             conn.close()
             return rows
+
+    def semantic_search(self, query: str, limit: int = None) -> list[dict]:
+        """
+        Search memories by semantic similarity using vector embeddings.
+        Falls back to empty list if sentence-transformers not installed.
+        """
+        from embeddings import is_available, semantic_search as _sem_search
+        if not is_available():
+            return []
+        n = limit or cfg.get("memory.max_long_term_results", 5)
+        with self._lock:
+            conn = self._get_conn()
+            matches = _sem_search(conn, query, limit=n)
+            if not matches:
+                conn.close()
+                return []
+            ids = [m[0] for m in matches]
+            score_map = {m[0]: m[1] for m in matches}
+            placeholders = ",".join("?" * len(ids))
+            cur = conn.cursor()
+            cur.execute(
+                f"SELECT id, content, tags, created_at, source_url FROM memories WHERE id IN ({placeholders})",
+                ids,
+            )
+            rows = []
+            for row in cur.fetchall():
+                d = dict(row)
+                d["semantic_score"] = round(score_map.get(d["id"], 0.0), 3)
+                rows.append(d)
+            conn.close()
+            # Re-sort by semantic score
+            rows.sort(key=lambda x: x["semantic_score"], reverse=True)
+            return rows
+
+    def hybrid_search(self, query: str, limit: int = None) -> list[dict]:
+        """
+        Hybrid search: merge FTS5 keyword results + semantic vector results.
+        Deduplicates by id. Semantic results boosted when available.
+        """
+        n = limit or cfg.get("memory.max_long_term_results", 5)
+        keyword_results = self.search_facts(query, limit=n * 2)
+        semantic_results = self.semantic_search(query, limit=n * 2)
+
+        # Merge by id, semantic takes priority
+        seen: dict[int, dict] = {}
+        for r in semantic_results:
+            seen[r["id"]] = r
+        for r in keyword_results:
+            if r["id"] not in seen:
+                r.setdefault("semantic_score", 0.0)
+                seen[r["id"]] = r
+
+        merged = sorted(seen.values(), key=lambda x: x.get("semantic_score", 0.0), reverse=True)
+        return merged[:n]
 
     def get_recent_facts(self, limit: int = 10) -> list[dict]:
         with self._lock:
@@ -170,13 +243,14 @@ class MemoryStore:
     def build_memory_context(self, query: str) -> str:
         if not query.strip():
             return ""
-        results = self.search_facts(query)
+        results = self.hybrid_search(query)
         if not results:
             return ""
         lines = ["Relevant memories from past sessions:"]
         for r in results:
             date = r["created_at"][:10] if r["created_at"] else "?"
-            line = f"  [{r['id']}] ({date}) {r['content']}"
+            sem = f" [sim:{r['semantic_score']:.2f}]" if r.get("semantic_score") else ""
+            line = f"  [{r['id']}] ({date}){sem} {r['content']}"
             if r.get("source_url"):
                 line += f" [src: {r['source_url']}]"
             lines.append(line)
@@ -184,23 +258,32 @@ class MemoryStore:
 
     # ── Source registry ───────────────────────────────────────────────────────
 
-    def record_source(self, url: str, title: str = "", topic_slug: str = "") -> int:
+    def record_source(self, url: str, title: str = "", topic_slug: str = "",
+                      reliability: int = None) -> int:
         from urllib.parse import urlparse
         domain = urlparse(url).netloc
+        # Auto-score if not provided
+        if reliability is None:
+            try:
+                from tools import score_domain
+                reliability, _ = score_domain(url)
+            except Exception:
+                reliability = 3
         with self._lock:
             conn = self._get_conn()
             cur = conn.cursor()
             cur.execute(
                 """
-                INSERT INTO sources (url, domain, title, topic_slug, session_id)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO sources (url, domain, title, topic_slug, session_id, reliability)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(url) DO UPDATE SET
                     last_fetched = datetime('now'),
                     fetch_count = fetch_count + 1,
                     title = CASE WHEN excluded.title != '' THEN excluded.title ELSE title END,
                     topic_slug = CASE WHEN excluded.topic_slug != '' THEN excluded.topic_slug ELSE topic_slug END
                 """,
-                (url.strip(), domain, title.strip(), topic_slug.strip(), self._session_id),
+                (url.strip(), domain, title.strip(), topic_slug.strip(),
+                 self._session_id, reliability),
             )
             conn.commit()
             last_id = cur.lastrowid or 0

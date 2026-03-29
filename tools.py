@@ -1,6 +1,100 @@
 import re
+import time
 import requests
+from urllib.parse import urlparse
 from config import cfg
+
+
+# ── Domain credibility tiers ──────────────────────────────────────────────────
+# Returns (score 1-5, tier label)
+# 1 = highest credibility, 5 = lowest
+
+_ACADEMIC_DOMAINS = {
+    ".edu", ".ac.uk", ".ac.au", ".ac.nz", ".ac.in", ".ac.jp",
+    ".edu.au", ".edu.cn", ".uni-", "arxiv.org", "pubmed.ncbi.nlm.nih.gov",
+    "scholar.google", "jstor.org", "researchgate.net", "semanticscholar.org",
+    "ncbi.nlm.nih.gov", "nature.com", "sciencedirect.com", "springer.com",
+    "ieee.org", "acm.org", "biorxiv.org", "medrxiv.org",
+}
+
+_GOV_DOMAINS = {".gov", ".gov.uk", ".gov.au", ".gov.ca", ".mil"}
+
+_QUALITY_NEWS = {
+    "reuters.com", "apnews.com", "bbc.com", "bbc.co.uk", "npr.org",
+    "theguardian.com", "nytimes.com", "wsj.com", "ft.com", "economist.com",
+    "scientificamerican.com", "newscientist.com", "arstechnica.com",
+    "wired.com", "technologyreview.com", "theatlantic.com",
+}
+
+_ORG_DOMAINS = {".org"}
+
+_LOW_QUALITY = {
+    "reddit.com", "quora.com", "yahoo.com", "buzzfeed.com",
+    "huffpost.com", "medium.com", "substack.com",
+}
+
+_SOCIAL_MEDIA = {
+    "twitter.com", "x.com", "facebook.com", "instagram.com",
+    "tiktok.com", "linkedin.com", "pinterest.com",
+}
+
+
+def score_domain(url: str) -> tuple[int, str]:
+    """
+    Score a URL's source credibility.
+    Returns (score, label) where score 1=highest, 5=lowest.
+    """
+    try:
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower().lstrip("www.")
+    except Exception:
+        return 3, "unknown"
+
+    # Tier 1: academic / government
+    for pat in _ACADEMIC_DOMAINS:
+        if pat in domain:
+            return 1, "academic"
+    for pat in _GOV_DOMAINS:
+        if domain.endswith(pat):
+            return 1, "government"
+
+    # Tier 2: quality journalism
+    if domain in _QUALITY_NEWS:
+        return 2, "quality-news"
+
+    # Tier 3: .org and general reference
+    if domain.endswith(".org"):
+        return 3, "organization"
+    if "wikipedia.org" in domain:
+        return 3, "wikipedia"
+
+    # Tier 4: social / aggregator / blogs
+    if domain in _LOW_QUALITY:
+        return 4, "aggregator"
+    if domain in _SOCIAL_MEDIA:
+        return 5, "social-media"
+
+    # Default: general web
+    return 3, "general-web"
+
+
+# ── Retry helper ──────────────────────────────────────────────────────────────
+
+def _retry(fn, max_retries: int = 3, base_delay: float = 1.0, exceptions=(Exception,)):
+    """
+    Call fn(), retrying up to max_retries times on any exception in `exceptions`.
+    Uses exponential backoff: 1s, 2s, 4s, ...
+    Raises the last exception if all retries exhausted.
+    """
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            return fn()
+        except exceptions as e:
+            last_exc = e
+            if attempt < max_retries - 1:
+                time.sleep(base_delay * (2 ** attempt))
+    raise last_exc
 
 TOOL_REGISTRY = [
     {
@@ -92,19 +186,24 @@ def format_tools_for_prompt() -> str:
 
 def web_search(query: str, max_results: int = None) -> str:
     n = max_results or cfg.get("search.max_results", 5)
-    try:
+
+    def _do_search():
         from ddgs import DDGS
-        # Modern DDGS usage
         with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=n))
-        
+            return list(ddgs.text(query, max_results=n))
+
+    try:
+        results = _retry(_do_search, max_retries=3, base_delay=1.0)
+
         if not results:
             return f"No results found for: {query}"
-        
+
         lines = [f"Search results for: {query}\n"]
         for i, r in enumerate(results, 1):
-            lines.append(f"{i}. {r.get('title', 'No title')}")
-            lines.append(f"   URL: {r.get('href', '')}")
+            url = r.get("href", "")
+            score, tier = score_domain(url)
+            lines.append(f"{i}. {r.get('title', 'No title')}  [credibility: {tier} ({score}/5)]")
+            lines.append(f"   URL: {url}")
             lines.append(f"   {r.get('body', '')[:200]}")
             lines.append("")
         return "\n".join(lines)
@@ -120,18 +219,32 @@ def fetch_page(url: str) -> str:
     if not url.startswith(("http://", "https://")):
         return f"Invalid URL (must start with http:// or https://): {url}"
 
-    try:
+    score, tier = score_domain(url)
+    cred_note = f"[source credibility: {tier} ({score}/5)]"
+
+    def _do_fetch():
         headers = {"User-Agent": "Mozilla/5.0 (compatible; research-agent/1.0)"}
         resp = requests.get(url, timeout=timeout, headers=headers)
         resp.raise_for_status()
-        html = resp.text
+        return resp.text
+
+    try:
+        html = _retry(
+            _do_fetch,
+            max_retries=3,
+            base_delay=1.5,
+            exceptions=(
+                requests.exceptions.Timeout,
+                requests.exceptions.ConnectionError,
+            ),
+        )
 
         # Try trafilatura first (best quality extraction)
         try:
             import trafilatura
             text = trafilatura.extract(html, include_links=False, include_images=False)
             if text and len(text.strip()) > 100:
-                return _truncate(text, max_chars, url)
+                return _truncate(text, max_chars, url, cred_note)
         except ImportError:
             pass
 
@@ -141,23 +254,23 @@ def fetch_page(url: str) -> str:
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
         text = soup.get_text(separator="\n")
-        # Collapse excessive whitespace
         text = re.sub(r"\n{3,}", "\n\n", text)
         text = re.sub(r"[ \t]+", " ", text)
-        return _truncate(text.strip(), max_chars, url)
+        return _truncate(text.strip(), max_chars, url, cred_note)
 
     except requests.exceptions.Timeout:
-        return f"Timed out fetching {url} (>{timeout}s)"
+        return f"Timed out fetching {url} after 3 attempts (>{timeout}s each)"
     except requests.exceptions.HTTPError as e:
         return f"HTTP error fetching {url}: {e}"
     except Exception as e:
         return f"Failed to fetch {url}: {e}"
 
 
-def _truncate(text: str, max_chars: int, url: str) -> str:
+def _truncate(text: str, max_chars: int, url: str, cred_note: str = "") -> str:
+    header = f"[Content from {url}] {cred_note}".rstrip()
     if len(text) <= max_chars:
-        return f"[Content from {url}]\n\n{text}"
-    return f"[Content from {url} — truncated to {max_chars} chars]\n\n{text[:max_chars]}..."
+        return f"{header}\n\n{text}"
+    return f"{header} — truncated to {max_chars} chars\n\n{text[:max_chars]}..."
 
 
 def execute_tool(tool_call: dict, memory_store, vault=None, topics=None) -> str:
@@ -240,11 +353,12 @@ def execute_tool(tool_call: dict, memory_store, vault=None, topics=None) -> str:
             else:
                 note.body = body
 
-            # Record sources
+            # Record sources with credibility score
             source_str = tool_call.get("sources", "")
             if source_str and memory_store:
                 for url in [u.strip() for u in source_str.split(",") if u.strip()]:
-                    memory_store.record_source(url, topic_slug=note.slug)
+                    cred_score, _ = score_domain(url)
+                    memory_store.record_source(url, topic_slug=note.slug, reliability=cred_score)
 
             vault.write_note(note)
             if topics:

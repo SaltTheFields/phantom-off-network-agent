@@ -13,11 +13,13 @@ class Note:
     status: str = "queued"
     priority: str = "medium"
     tags: list = field(default_factory=list)
+    aliases: list = field(default_factory=list)   # Dataview: alternate names
     created: str = ""
     last_researched: str = ""
     refresh_interval_days: int = 7
     body: str = ""
     forward_links: list = field(default_factory=list)
+    feeds: list = field(default_factory=list)      # RSS feed URLs for this topic
     # Research stats (cumulative across runs)
     research_runs: int = 0
     total_sources_fetched: int = 0
@@ -124,11 +126,13 @@ class VaultManager:
             status=meta.get("status", "active"),
             priority=meta.get("priority", "medium"),
             tags=meta.get("tags", []),
+            aliases=meta.get("aliases", []),
             created=meta.get("created", ""),
             last_researched=meta.get("last_researched", ""),
             refresh_interval_days=int(meta.get("refresh_interval_days", 7)),
             body=body,
             forward_links=self.extract_wikilinks(body),
+            feeds=meta.get("feeds", []),
             research_runs=int(meta.get("research_runs", 0)),
             total_sources_fetched=int(meta.get("total_sources_fetched", 0)),
             total_memories_saved=int(meta.get("total_memories_saved", 0)),
@@ -140,15 +144,19 @@ class VaultManager:
     def write_note(self, note: Note) -> None:
         """Write note to disk. Does NOT rebuild backlinks — caller must do that explicitly."""
         meta = {
+            # Dataview-standard fields first
             "name": note.name,
+            "aliases": note.aliases,        # Dataview: alternate names for search
+            "tags": note.tags,              # Dataview: standard tag field
+            # Phantom fields
             "slug": note.slug,
             "type": note.type,
             "status": note.status,
             "priority": note.priority,
-            "tags": note.tags,
             "created": note.created or str(date.today()),
             "last_researched": note.last_researched or "",
             "refresh_interval_days": note.refresh_interval_days,
+            "feeds": note.feeds,            # RSS feed URLs for this topic
             "research_runs": note.research_runs,
             "total_sources_fetched": note.total_sources_fetched,
             "total_memories_saved": note.total_memories_saved,
