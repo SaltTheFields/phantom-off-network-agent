@@ -172,12 +172,57 @@ When referencing related topics, people, technologies, or events by name, wrap t
 Example: "The work of [[Alan Turing]] influenced [[Computer Science]]."
 Only use WikiLinks for topics that deserve their own research note — not for every noun."""
 
+# ── Depth-specific research modes ────────────────────────────────────────────
+
+_DEPTH_MODES = {
+    0: (
+        "DEPTH 0 — Cold Start",
+        "This topic has never been researched. Build a solid overview from scratch. "
+        "Find the most authoritative and widely cited sources. Prioritize breadth — "
+        "cover all the major sections. Do at least 2 web searches and fetch 2-3 pages."
+    ),
+    1: (
+        "DEPTH 1 — Verify & Expand",
+        "The topic has a basic note. Now verify the key claims with additional sources. "
+        "Look for anything that's changed recently. Expand thin sections. "
+        "Check if any facts are disputed or outdated. Add at least one source you haven't used before."
+    ),
+    2: (
+        "DEPTH 2 — Cross-Link & Connect",
+        "The topic is well-documented. Now focus on connections. "
+        "How does this topic relate to other topics in the vault? "
+        "Add WikiLinks to related concepts, people, and events. "
+        "Look for non-obvious connections. Search for the topic in combination with adjacent subjects."
+    ),
+}
+
+_DEPTH_POWERSEARCH = (
+    "DEPTH 3+ — Powersearch",
+    "This topic has been thoroughly researched at surface level. Now go deep. "
+    "Search for academic papers, primary sources, and minority viewpoints. "
+    "Follow citation trails — if a source references another source, fetch it. "
+    "Look for contradictions in the existing note and try to resolve them. "
+    "Search for the topic combined with terms like: 'study', 'research', 'analysis', "
+    "'criticism', 'alternative view', 'history', 'origin'. "
+    "Prioritize sources with credibility scores of 1 or 2 (academic/government/quality-news)."
+)
+
+
+def get_depth_instruction(depth: int) -> tuple[str, str]:
+    """Return (mode_label, mode_instruction) for the given research depth."""
+    if depth >= 3:
+        return _DEPTH_POWERSEARCH
+    return _DEPTH_MODES.get(depth, _DEPTH_MODES[0])
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def get_research_prompt(topic_type: str, topic_name: str, existing_note_body: str = "") -> str:
+def get_research_prompt(topic_type: str, topic_name: str, existing_note_body: str = "",
+                        depth: int = 0) -> str:
     t = topic_type if topic_type in _SECTIONS_BY_TYPE else "research"
     sections = _SECTIONS_BY_TYPE[t]
     update_instructions = _UPDATE_INSTRUCTIONS[t]
+    depth_label, depth_instruction = get_depth_instruction(depth)
 
     if existing_note_body.strip():
         existing_block = (
@@ -191,6 +236,9 @@ def get_research_prompt(topic_type: str, topic_name: str, existing_note_body: st
     prompt = f"""\
 Research task: {topic_name}
 Topic type: {t}
+Research depth: {depth} — {depth_label}
+
+{depth_instruction}
 
 {existing_block}
 Produce a complete updated note body using this exact section structure:

@@ -20,12 +20,14 @@ class Note:
     body: str = ""
     forward_links: list = field(default_factory=list)
     feeds: list = field(default_factory=list)      # RSS feed URLs for this topic
+    research_depth: int = 0                        # depth counter — increments every pass
     # Research stats (cumulative across runs)
     research_runs: int = 0
     total_sources_fetched: int = 0
     total_memories_saved: int = 0
     last_run_elapsed_s: float = 0
     last_run_iterations: int = 0
+    consensus_models: list = field(default_factory=list)  # specific models for this topic
 
 
 # ── Frontmatter parser (no PyYAML) ────────────────────────────────────────────
@@ -133,11 +135,13 @@ class VaultManager:
             body=body,
             forward_links=self.extract_wikilinks(body),
             feeds=meta.get("feeds", []),
+            research_depth=int(meta.get("research_depth", 0)),
             research_runs=int(meta.get("research_runs", 0)),
             total_sources_fetched=int(meta.get("total_sources_fetched", 0)),
             total_memories_saved=int(meta.get("total_memories_saved", 0)),
             last_run_elapsed_s=float(meta.get("last_run_elapsed_s", 0)),
             last_run_iterations=int(meta.get("last_run_iterations", 0)),
+            consensus_models=meta.get("consensus_models", []),
         )
         return note
 
@@ -148,6 +152,7 @@ class VaultManager:
             "name": note.name,
             "aliases": note.aliases,        # Dataview: alternate names for search
             "tags": note.tags,              # Dataview: standard tag field
+            "consensus_models": note.consensus_models,  # specific models for this topic
             # Phantom fields
             "slug": note.slug,
             "type": note.type,
@@ -157,6 +162,7 @@ class VaultManager:
             "last_researched": note.last_researched or "",
             "refresh_interval_days": note.refresh_interval_days,
             "feeds": note.feeds,            # RSS feed URLs for this topic
+            "research_depth": note.research_depth,
             "research_runs": note.research_runs,
             "total_sources_fetched": note.total_sources_fetched,
             "total_memories_saved": note.total_memories_saved,

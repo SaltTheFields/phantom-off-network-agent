@@ -187,9 +187,10 @@ def run_consensus_research(note, vault, memory_a, topics, roster) -> ConsensusRe
     Returns None if only one model is available.
 
     The two models are chosen from:
-      1. config.json schedule.consensus_models (list of 2)
-      2. roster — pick the two models assigned to this topic type
-      3. Fallback: skip consensus
+      1. Note's own 'consensus_models' frontmatter field
+      2. config.json schedule.consensus_models (list of 2)
+      3. roster — pick the two models assigned to this topic type
+      4. Fallback: pick the first two available models
     """
     from config import cfg
     from llm import chat
@@ -198,9 +199,15 @@ def run_consensus_research(note, vault, memory_a, topics, roster) -> ConsensusRe
     from tools import execute_tool
     from memory import MemoryStore
 
-    consensus_models = cfg.get("schedule.consensus_models", [])
+    # 1. Topic-specific override
+    consensus_models = getattr(note, "consensus_models", [])
+    
+    # 2. Global config fallback
     if not consensus_models or len(consensus_models) < 2:
-        # Try to pull two models from the roster
+        consensus_models = cfg.get("schedule.consensus_models", [])
+    
+    # 3. Roster / available fallback
+    if not consensus_models or len(consensus_models) < 2:
         available = roster.list_available() if roster else []
         online = [a["model"] for a in available if a["available"]]
         if len(online) < 2:

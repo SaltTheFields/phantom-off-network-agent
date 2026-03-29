@@ -3,7 +3,7 @@
     "base_url": "http://localhost:11434",
     "model": "llama3.1:8b",
     "broker_model": "phi3:mini",
-    "timeout": 300,
+    "timeout": 600,
     "temperature": 0.7,
     "context_window": 4096
   },
@@ -32,7 +32,16 @@
     "stale_check_enabled": true,
     "generate_daily_digest": true,
     "silent_mode": true,
-    "max_parallel_workers": 1
+    "max_parallel_workers": 1,
+    "loop_sleep_between_topics_s": 30,
+    "loop_batch_size": 3,
+    "loop_batch_rest_s": 120,
+    "loop_max_runtime_hours": 0
+  },
+  "web": {
+    "host": "127.0.0.1",
+    "port": 7777,
+    "auto_start": true
   },
   "context": {
     "path": "context.md"

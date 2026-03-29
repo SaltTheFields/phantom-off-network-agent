@@ -53,6 +53,7 @@ This is a research tool for people who want to think deeply about topics over ti
 | **Research Templates** | Type-specific prompts: person / tech / event / concept / research |
 | **Static Context** | User-editable `context.md` injected into every LLM prompt |
 | **Topic Graph** | ASCII forward + backlink map across your entire vault |
+| **Dynamic Dashboard** | Modern Web UI with auto-tailing logs and live research progress |
 
 ---
 
@@ -69,6 +70,7 @@ This is a research tool for people who want to think deeply about topics over ti
 git clone https://github.com/SaltTheFields/phantom-off-network-agent
 cd phantom-off-network-agent
 pip install -r requirements.txt
+pip install fastapi "uvicorn[standard]"  # Optional: for web dashboard
 ```
 
 ### Configure

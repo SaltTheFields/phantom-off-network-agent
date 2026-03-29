@@ -82,7 +82,8 @@ def _worker(
         _p(f"model: {model}")
 
         existing_body = note.body or ""
-        topic_context = get_research_prompt(note.type, note.name, existing_body)
+        topic_context = get_research_prompt(note.type, note.name, existing_body,
+                                            depth=note.research_depth)
         system_prompt = build_system_prompt(topic_context=topic_context)
 
         # Inject any new RSS feed items as context
@@ -182,12 +183,11 @@ def _worker(
 
         memory.clear_session()
 
-        # Consensus mode: run again with a second model and merge
-        consensus_models = cfg.get("schedule.consensus_models", [])
-        if consensus_models and len(consensus_models) >= 2:
+        # Consensus mode: run again with multiple models and merge
+        if cfg.get("agent.consensus_mode", False):
             try:
                 from consensus import run_consensus_research
-                _p(f"→ consensus: running second model {consensus_models[1]}...")
+                _p("→ consensus: running multi-model research for agreement...")
                 c_result = run_consensus_research(note, vault, memory, topics, roster)
                 if c_result and c_result.merged_body:
                     c_note = vault.read_note(note.slug)
@@ -196,7 +196,8 @@ def _worker(
                         vault.write_note(c_note)
                     if c_result.conflicts:
                         _p(f"  ⚡ {len(c_result.conflicts)} conflict(s) flagged between models")
-            except Exception:
+            except Exception as e:
+                _p(f"  ! consensus failed: {e}")
                 pass  # consensus is optional — never fail the whole run
 
         updated_note = vault.read_note(note.slug)
@@ -215,6 +216,8 @@ def _worker(
             vault.write_note(updated_note)
 
             topics.mark_researched(note.slug)
+            new_depth = topics.increment_depth(note.slug)
+            _p(f"depth → {new_depth}")
             log.note_written(note.slug, outcome.sources_found)
             log.topic_done(note, outcome.elapsed_s, outcome.sources_found,
                            outcome.memories_saved, outcome.iterations)
@@ -432,6 +435,132 @@ class ResearchScheduler:
             f.write("\n".join(lines))
 
         return digest_path
+
+
+# ── Loop Scheduler ────────────────────────────────────────────────────────────
+
+class LoopScheduler:
+    """
+    Continuously picks topics via weighted random selection and researches them.
+    Never exits — designed for always-on / overnight use.
+
+    Config keys (all in schedule.*):
+        loop_sleep_between_topics_s  — pause between topics (default: 30)
+        loop_batch_size              — topics per batch before a longer rest (default: 3)
+        loop_batch_rest_s            — rest between batches (default: 120)
+        loop_max_runtime_hours       — safety ceiling, 0 = unlimited (default: 0)
+    """
+
+    def __init__(self, memory: MemoryStore, vault: VaultManager,
+                 topics: TopicManager, roster=None):
+        self.memory = memory
+        self.vault = vault
+        self.topics = topics
+
+        if roster is None:
+            from agents import AgentRoster
+            roster = AgentRoster()
+        self.roster = roster
+
+        from logger import PhantomLogger
+        self.log = PhantomLogger()
+
+        self.sleep_between = cfg.get("schedule.loop_sleep_between_topics_s", 30)
+        self.batch_size    = cfg.get("schedule.loop_batch_size", 3)
+        self.batch_rest    = cfg.get("schedule.loop_batch_rest_s", 120)
+        self.max_hours     = cfg.get("schedule.loop_max_runtime_hours", 0)
+
+        self._stop_event = threading.Event()
+        self._total_researched = 0
+        self._force_queue: list = []   # topics pushed to front via force_research()
+
+    def stop(self):
+        """Signal the loop to exit cleanly after the current topic finishes."""
+        self._stop_event.set()
+
+    def force_research(self, note) -> None:
+        """Push a specific topic to the front of the next pick."""
+        self._force_queue.insert(0, note)
+
+    def run(self) -> None:
+        db_path = cfg.get("memory.db_path", "data/memory.db")
+        print_lock = threading.Lock()
+        loop_start = time.time()
+        batch_count = 0
+        model = cfg.get("ollama.model", "unknown")
+
+        self.log.run_start("loop", model, 0)
+        print(f"\nLoop mode active — Ctrl+C to stop", flush=True)
+        print(f"  Batch size: {self.batch_size} topics | Sleep: {self.sleep_between}s between | {self.batch_rest}s between batches", flush=True)
+        print("─" * 50, flush=True)
+
+        while not self._stop_event.is_set():
+            # Runtime ceiling check
+            if self.max_hours > 0:
+                elapsed_h = (time.time() - loop_start) / 3600
+                if elapsed_h >= self.max_hours:
+                    print(f"\nLoop runtime limit reached ({self.max_hours}h). Stopping.", flush=True)
+                    break
+
+            # Pick next topic
+            if self._force_queue:
+                note = self._force_queue.pop(0)
+                print(f"\n[FORCED] {note.name}", flush=True)
+            else:
+                candidates = self.topics.get_loop_candidates()
+                if not candidates:
+                    print("No topics available. Sleeping 60s...", flush=True)
+                    self._stop_event.wait(60)
+                    continue
+                note = self.topics.weighted_pick(candidates)
+
+            if not note:
+                self._stop_event.wait(self.sleep_between)
+                continue
+
+            position = self._total_researched + 1
+            depth_label = f"depth {note.research_depth}"
+            print(f"\n[#{position}] {note.name}  ({note.type}/{note.priority}, {depth_label})", flush=True)
+            self.log.topic_start(note, position, 0)
+
+            outcome = _worker(
+                note, position, 0,
+                self.vault, self.roster, db_path, print_lock, self.log,
+            )
+
+            self._total_researched += 1
+            batch_count += 1
+
+            with print_lock:
+                if outcome.success:
+                    print(
+                        f"       ── Done [{_fmt_duration(outcome.elapsed_s)}]"
+                        f" — {outcome.sources_found} sources,"
+                        f" {outcome.memories_saved} memories,"
+                        f" {outcome.iterations} iterations",
+                        flush=True,
+                    )
+                else:
+                    print(f"       ── FAILED: {outcome.error}", flush=True)
+
+            # Rebuild after each topic in loop mode
+            self.vault.rebuild_backlinks()
+            self.vault.rebuild_index()
+
+            if self._stop_event.is_set():
+                break
+
+            # Batch rest
+            if batch_count >= self.batch_size:
+                print(f"\n  Batch of {self.batch_size} complete — resting {self.batch_rest}s...", flush=True)
+                batch_count = 0
+                self._stop_event.wait(self.batch_rest)
+            else:
+                self._stop_event.wait(self.sleep_between)
+
+        print(f"\nLoop stopped. Total topics researched: {self._total_researched}", flush=True)
+        self.log.run_done(self._total_researched, 0, time.time() - loop_start)
+        self.log.close()
 
 
 _BANNER = """

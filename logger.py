@@ -12,12 +12,13 @@ from config import cfg
 
 
 class PhantomLogger:
-    def __init__(self):
+    def __init__(self, on_event=None):
         self._enabled = cfg.get("logging.enabled", True)
         self._log_dir = cfg.get("logging.log_dir", "logs")
         self._level = cfg.get("logging.level", "INFO")
         self._fh = None
         self._run_start_ts = None
+        self._on_event = on_event  # optional callback(data: dict) for live streaming
 
         if not self._enabled:
             return
@@ -63,6 +64,11 @@ class PhantomLogger:
             self._fh.write(json.dumps(data) + "\n")
         except Exception:
             pass
+        if self._on_event:
+            try:
+                self._on_event(data)
+            except Exception:
+                pass
 
     def _header(self, lines: list[str]):
         if not self._enabled or self._fh is None:

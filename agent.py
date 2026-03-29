@@ -470,15 +470,62 @@ def startup() -> tuple[MemoryStore, VaultManager, TopicManager, AgentRoster, boo
     print(f"  Vault   : {vault_path}/")
     print(f"  Context : {ctx_path}")
     print(f"  Type /help for commands, /exit to quit")
-    print("=" * 56 + "\n")
+    print(f"  Flags   : --loop (continuous) | --schedule (batch) | --topic <name> (force)")
+    print("=" * 68 + "\n")
 
     return memory, vault, topics, roster, ok
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
-def cli_loop():
+def _start_web_ui():
+    """Start the web dashboard in a background daemon thread."""
+    try:
+        import web_app
+        import uvicorn
+        print("  Dashboard : http://127.0.0.1:7777", flush=True)
+        uvicorn.run(web_app.app, host="127.0.0.1", port=7777,
+                    log_level="error", access_log=False)
+    except ImportError:
+        pass  # fastapi/uvicorn not installed — skip silently
+    except Exception as e:
+        print(f"  Web UI failed to start: {e}", flush=True)
+
+
+def _start_background_research(memory, vault, topics, roster):
+    """Kick off one research pass immediately on startup in a background thread."""
+    import threading
+    from scheduler import ResearchScheduler
+
+    def _run():
+        try:
+            scheduler = ResearchScheduler(memory, vault, topics, roster=roster, max_topics=3)
+            scheduler.run()
+        except Exception:
+            pass
+
+    t = threading.Thread(target=_run, daemon=True, name="startup-research")
+    t.start()
+    return t
+
+
+def cli_loop(start_web: bool = True, start_research: bool = True):
     memory, vault, topics, roster, connected = startup()
+
+    # Auto-start dashboard
+    if start_web:
+        import threading
+        web_thread = threading.Thread(target=_start_web_ui, daemon=True, name="web-ui")
+        web_thread.start()
+
+    # Immediate background research pass on startup
+    if start_research and connected:
+        queued = len(topics.list_topics(status="queued"))
+        if queued > 0:
+            print(f"  Starting background research on {min(queued, 3)} queued topic(s)...", flush=True)
+            _start_background_research(memory, vault, topics, roster)
+
+    print()
 
     while True:
         try:
@@ -522,15 +569,98 @@ def cli_loop():
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Phantom Off-Network Agent")
-    parser.add_argument(
-        "--schedule",
-        action="store_true",
-        help="Run scheduled research mode — works queue then exits",
-    )
+    parser.add_argument("--schedule", action="store_true",
+                        help="Run scheduled research mode — works queue then exits")
+    parser.add_argument("--loop", action="store_true",
+                        help="Run continuous loop mode — researches forever, weighted by priority+depth")
+    parser.add_argument("--topic", metavar="NAME",
+                        help="Force-research a specific topic by name then exit")
+    parser.add_argument("--no-web", action="store_true",
+                        help="Disable auto-start of web dashboard")
+    parser.add_argument("--no-autostart", action="store_true",
+                        help="Disable immediate background research on startup")
     args = parser.parse_args()
 
     if args.schedule:
         from scheduler import run_scheduled
         run_scheduled()
+    elif args.loop:
+        from scheduler import LoopScheduler, _BANNER
+        from context import load_context
+        from llm import check_connection as _chk
+        import threading
+
+        print(_BANNER, flush=True)
+        print("=" * 68, flush=True)
+        print("  Phantom — Loop Research Mode", flush=True)
+        print("=" * 68, flush=True)
+
+        ok, msg = _chk()
+        if not ok:
+            print(f"\nAborting: {msg}", flush=True)
+            sys.exit(1)
+        print(f"  {msg}", flush=True)
+        load_context()
+
+        db_path = cfg.get("memory.db_path", "data/memory.db")
+        vault_path = cfg.get("vault.path", "vault")
+
+        from memory import MemoryStore
+        from vault import VaultManager
+        from topics import TopicManager
+        from agents import AgentRoster
+
+        memory = MemoryStore(db_path)
+        vault  = VaultManager(vault_path)
+        topics = TopicManager(vault)
+        roster = AgentRoster()
+
+        if not args.no_web:
+            web_thread = threading.Thread(target=_start_web_ui, daemon=True, name="web-ui")
+            web_thread.start()
+            import time; time.sleep(0.5)
+
+        loop = LoopScheduler(memory, vault, topics, roster=roster)
+        try:
+            loop.run()
+        except KeyboardInterrupt:
+            print("\n\nStopping loop...", flush=True)
+            loop.stop()
+        memory.close()
+    elif args.topic:
+        # Force-research a single topic then exit
+        from scheduler import _BANNER
+        from context import load_context
+        from llm import check_connection as _chk
+        from memory import MemoryStore
+        from vault import VaultManager
+        from topics import TopicManager
+        from agents import AgentRoster
+
+        print(_BANNER, flush=True)
+        ok, msg = _chk()
+        if not ok:
+            print(f"Aborting: {msg}"); sys.exit(1)
+        load_context()
+
+        memory = MemoryStore(cfg.get("memory.db_path", "data/memory.db"))
+        vault  = VaultManager(cfg.get("vault.path", "vault"))
+        topics = TopicManager(vault)
+        roster = AgentRoster()
+
+        note = topics.get_topic(args.topic)
+        if not note:
+            print(f"Topic not found: {args.topic}"); sys.exit(1)
+
+        print(f"Force-researching: {note.name} (depth {note.research_depth})", flush=True)
+        from scheduler import ResearchScheduler
+        # Temporarily set topic as queued so scheduler picks it up
+        topics.update_status(note.slug, "queued")
+        scheduler = ResearchScheduler(memory, vault, topics, roster=roster, max_topics=1)
+        scheduler.run()
+        memory.close()
     else:
-        cli_loop()
+        cli_loop(
+            start_web=not args.no_web,
+            start_research=not args.no_autostart,
+        )

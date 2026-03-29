@@ -1,6 +1,7 @@
 import re
 import json
 import os
+import random
 from datetime import date, datetime
 from vault import VaultManager, Note
 from config import cfg
@@ -240,6 +241,55 @@ class TopicManager:
             lines.append(f"[{archived_count} archived topic(s) hidden]")
 
         return "\n".join(lines)
+
+    # ── Loop / depth-based selection ─────────────────────────────────────────
+
+    def get_loop_candidates(self) -> list[Note]:
+        """
+        Return all non-archived topics sorted for loop research.
+        Combines queued + active (stale or not) — every topic is always eligible
+        in loop mode. Sort key: (depth ASC, priority weight ASC).
+        """
+        all_notes = [n for n in self.list_topics() if n.status != "archived"]
+        all_notes.sort(key=lambda n: (
+            n.research_depth,
+            PRIORITY_ORDER.get(n.priority, 1),
+            n.last_researched or "0000-00-00",
+        ))
+        return all_notes
+
+    def weighted_pick(self, candidates: list[Note]) -> Note | None:
+        """
+        Pick one topic using weighted random selection.
+        Weight = priority_weight * depth_decay so:
+        - High priority always picked more often than medium/low
+        - Shallower topics get a boost over deeper ones within same priority
+        - Every topic always has a non-zero chance (no starvation)
+        """
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+
+        PRIORITY_WEIGHT = {"high": 10, "medium": 3, "low": 1}
+
+        def _weight(note: Note) -> float:
+            base = PRIORITY_WEIGHT.get(note.priority, 3)
+            # Depth decay: weight halves every 2 depth levels, floor at 0.1
+            decay = max(0.1, 1.0 / (1 + note.research_depth * 0.5))
+            return base * decay
+
+        weights = [_weight(n) for n in candidates]
+        return random.choices(candidates, weights=weights, k=1)[0]
+
+    def increment_depth(self, slug: str) -> int:
+        """Increment research_depth for a topic. Returns new depth."""
+        note = self.vault.read_note(slug)
+        if not note:
+            return 0
+        note.research_depth += 1
+        self.vault.write_note(note)
+        return note.research_depth
 
     # ── Bulk import ───────────────────────────────────────────────────────────
 
