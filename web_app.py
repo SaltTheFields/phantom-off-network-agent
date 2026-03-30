@@ -538,7 +538,10 @@ def _format_log_line(raw: str) -> str:
         elif ev == "run_done":
             msg = f"== run done  ok={d.get('topics_completed',0)}  fail={d.get('topics_failed',0)}  elapsed={d.get('total_elapsed_s','')}s"
         elif ev == "topic_start":
-            msg = f"-> [{d.get('position','')}/{d.get('of','')}] {topic}  {d.get('priority','')} / {d.get('type','')}"
+            pos = d.get('position', '')
+            of  = d.get('of', 0)
+            of_str = f"pool:{of}" if of else "loop"
+            msg = f"-> [#{pos}/{of_str}] {topic}  {d.get('priority','')} / {d.get('type','')}"
         elif ev == "topic_done":
             msg = f"ok {topic}  {d.get('elapsed_s','')}s  src={d.get('sources',0)}  mem={d.get('memories',0)}  iter={d.get('iterations',0)}"
         elif ev == "topic_failed":

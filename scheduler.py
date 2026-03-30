@@ -503,6 +503,7 @@ class LoopScheduler:
                     break
 
             # Pick next topic
+            pool_size = 0
             if self._force_queue:
                 note = self._force_queue.pop(0)
                 print(f"\n[FORCED] {note.name}", flush=True)
@@ -512,6 +513,7 @@ class LoopScheduler:
                     print("No topics available. Sleeping 60s...", flush=True)
                     self._stop_event.wait(60)
                     continue
+                pool_size = len(candidates)
                 note = self.topics.weighted_pick(candidates)
 
             if not note:
@@ -520,12 +522,12 @@ class LoopScheduler:
 
             position = self._total_researched + 1
             depth_label = f"depth {note.research_depth}"
-            print(f"\n[#{position}] {note.name}  ({note.type}/{note.priority}, {depth_label})", flush=True)
-            self.log.topic_start(note, position, 0)
+            print(f"\n[#{position}/loop pool:{pool_size}] {note.name}  ({note.type}/{note.priority}, {depth_label})", flush=True)
+            self.log.topic_start(note, position, pool_size)
 
             try:
                 outcome = _worker(
-                    note, position, 0,
+                    note, position, pool_size,
                     self.vault, self.roster, db_path, print_lock, self.log,
                 )
             except Exception as e:
