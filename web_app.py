@@ -125,14 +125,14 @@ def _hook_scheduler_log(scheduler):
 
 # ── ASCII Banner ───────────────────────────────────────────────────────────────
 
-_BANNER = """\
-  \u2588\u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2557  \u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2557   \u2588\u2588\u2588\u2557
-  \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2551\u255a\u2550\u2550\u2588\u2588\u2554\u2550\u2550\u255d\u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2551
-  \u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2557 \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2588\u2588\u2554\u2588\u2588\u2551
-  \u2588\u2588\u2554\u2550\u2550\u2550\u255d \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2557\u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2554\u255d\u2588\u2588\u2551
-  \u2588\u2588\u2551     \u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551 \u255a\u2588\u2588\u2588\u2588\u2551   \u2588\u2588\u2551   \u255a\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551 \u255a\u2550\u255d \u2588\u2588\u2551
-  \u255a\u2550\u255d     \u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u2550\u2550\u255d   \u255a\u2550\u255d    \u255a\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d     \u255a\u2550\u255d
-  \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 off-network-agent \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"""
+_BANNER = (
+    r"  ____  _   _    _    _   _ _____ ___  __  __" + "\n"
+    r" |  _ \| | | |  / \  | \ | |_   _/ _ \|  \/  |" + "\n"
+    r" | |_) | |_| | / _ \ |  \| | | || | | | |\/| |" + "\n"
+    r" |  __/|  _  |/ ___ \| |\  | | || |_| | |  | |" + "\n"
+    r" |_|   |_| |_/_/   \_\_| \_| |_| \___/|_|  |_|" + "\n"
+    r" ················· off-network-agent ···········"
+)
 
 
 # ── Styles ─────────────────────────────────────────────────────────────────────
@@ -173,9 +173,9 @@ a:hover{color:var(--accent-bright);text-decoration:underline}
 
 .banner{
   display:inline-block;
-  font-size:10.5px;
-  line-height:1.22;
-  letter-spacing:0;
+  font-size:13px;
+  line-height:1.3;
+  letter-spacing:.02em;
   white-space:pre;
   font-weight:bold;
   background:var(--accent-grad);
@@ -702,7 +702,7 @@ def dashboard():
             with open(log_path, encoding="utf-8", errors="replace") as f:
                 lines = [l.rstrip() for l in f if l.strip().startswith("{")]
             if lines:
-                log_html = "".join(_format_log_line(l) for l in lines[-100:])
+                log_html = "".join(_format_log_line(l) for l in reversed(lines[-100:]))
         except Exception:
             pass
     log_section = (
@@ -743,9 +743,8 @@ def dashboard():
     d.className='log-entry ' + cls(text);
     var ts = new Date().toLocaleTimeString('en-GB', {hour12:false});
     d.innerHTML = '<span class="log-ts">'+ts+'</span><span class="log-msg">'+text+'</span>';
-    logBox.appendChild(d);
-    logBox.scrollTop = logBox.scrollHeight;
-    if(logBox.children.length > 200) logBox.removeChild(logBox.firstChild);
+    logBox.insertBefore(d, logBox.firstChild);
+    if(logBox.children.length > 200) logBox.removeChild(logBox.lastChild);
   }
 
   var es=new EventSource('/progress/stream');
