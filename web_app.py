@@ -503,6 +503,28 @@ def _log_event_class(data: dict) -> str:
     return "lc-info"
 
 
+def _hour_color(ts: str) -> str:
+    """
+    Map an HH:MM:SS timestamp to a hue interpolated across the 24-hour gradient.
+    Keypoints: 0h=220, 6h=185, 12h=165, 18h=270, 24h=220
+    Returns a CSS hsl() string at 65% saturation, 55% lightness.
+    """
+    try:
+        parts = ts.split(":")
+        hour = int(parts[0]) + (int(parts[1]) / 60 if len(parts) > 1 else 0)
+    except Exception:
+        hour = 12.0
+    keys = [(0, 220), (6, 185), (12, 165), (18, 270), (24, 220)]
+    for i in range(len(keys) - 1):
+        h0, hue0 = keys[i]
+        h1, hue1 = keys[i + 1]
+        if h0 <= hour < h1:
+            t = (hour - h0) / (h1 - h0)
+            hue = round(hue0 + t * (hue1 - hue0))
+            return f"hsl({hue},65%,55%)"
+    return "hsl(220,65%,55%)"
+
+
 def _format_log_line(raw: str) -> str:
     try:
         d   = json.loads(raw)
@@ -531,12 +553,18 @@ def _format_log_line(raw: str) -> str:
             msg = f"   note saved  {d.get('slug','')}  src={d.get('sources',0)}"
         elif ev == "memory_saved":
             msg = f"   memory #{d.get('memory_id','')} stored"
+        elif d.get("level") == "WARN":
+            extra = {k: v for k, v in d.items() if k not in ("ts","level","event")}
+            msg = f"!! {ev}  " + "  ".join(f"{k}={v}" for k, v in extra.items())
         else:
-            msg = raw[:160]
-        # timestamp uses accent color so it shifts with the time gradient
+            # unknown event — show key fields cleanly instead of raw JSON
+            msg = f"   {ev}  {topic}" if (ev or topic) else raw[:120]
+
+        # Hour-based timestamp color — interpolates through the same gradient as the accent
+        ts_color = _hour_color(ts)
         return (
             f'<div class="log-entry {cls}">'
-            f'<span class="log-ts">{_html.escape(ts)}</span>'
+            f'<span class="log-ts" style="color:{ts_color}">{_html.escape(ts)}</span>'
             f'{_html.escape(msg)}</div>'
         )
     except Exception:
@@ -664,6 +692,9 @@ def dashboard():
         
         f'<div class="btn-group"><a href="/topics?status=queued"><button class="btn-dim">Queue View</button></a>'
         f'<span class="btn-desc">See what is next</span></div>'
+
+        f'<div class="btn-group"><button class="btn-dim" onclick="location.reload()">↻ Refresh Page</button>'
+        f'<span class="btn-desc">Reload log &amp; stats</span></div>'
         f'</div>'
     )
     if _run_status.get("last"):
