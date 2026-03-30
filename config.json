@@ -16,7 +16,8 @@
   "agent": {
     "max_iterations": 8,
     "verbose": true,
-    "consensus_mode": true
+    "consensus_mode": true,
+    "consensus_min_depth": 2
   },
   "search": {
     "max_results": 5,

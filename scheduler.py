@@ -183,11 +183,13 @@ def _worker(
 
         memory.clear_session()
 
-        # Consensus mode: run again with multiple models and merge
-        if cfg.get("agent.consensus_mode", False):
+        # Consensus mode: only run at depth 2+ (deep research) to avoid wasting
+        # time on shallow/first-pass topics. Depth 0-1 = gather phase, not worth a second model.
+        consensus_min_depth = cfg.get("agent.consensus_min_depth", 2)
+        if cfg.get("agent.consensus_mode", False) and note.research_depth >= consensus_min_depth:
             try:
                 from consensus import run_consensus_research
-                _p("→ consensus: running multi-model research for agreement...")
+                _p(f"→ consensus: depth {note.research_depth} — running multi-model review...")
                 c_result = run_consensus_research(note, vault, memory, topics, roster)
                 if c_result and c_result.merged_body:
                     c_note = vault.read_note(note.slug)
@@ -522,7 +524,7 @@ class LoopScheduler:
 
             position = self._total_researched + 1
             depth_label = f"depth {note.research_depth}"
-            print(f"\n[#{position}/loop pool:{pool_size}] {note.name}  ({note.type}/{note.priority}, {depth_label})", flush=True)
+            print(f"\n[#{position} of {pool_size}] {note.name}  ({note.type}/{note.priority}, {depth_label})", flush=True)
             self.log.topic_start(note, position, pool_size)
 
             try:

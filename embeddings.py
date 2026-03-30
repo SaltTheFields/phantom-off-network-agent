@@ -41,8 +41,18 @@ def get_model():
         return _model
     with _model_lock:
         if _model is None:
-            from sentence_transformers import SentenceTransformer
-            _model = SentenceTransformer(_MODEL_NAME)
+            import logging
+            import warnings
+            # Suppress noisy HF hub and transformers load messages
+            os.environ.setdefault("HF_HUB_DISABLE_IMPLICIT_TOKEN", "1")
+            os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+            logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+            logging.getLogger("transformers").setLevel(logging.ERROR)
+            logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                from sentence_transformers import SentenceTransformer
+                _model = SentenceTransformer(_MODEL_NAME, device="cpu")
     return _model
 
 
