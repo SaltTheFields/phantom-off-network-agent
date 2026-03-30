@@ -523,10 +523,16 @@ class LoopScheduler:
             print(f"\n[#{position}] {note.name}  ({note.type}/{note.priority}, {depth_label})", flush=True)
             self.log.topic_start(note, position, 0)
 
-            outcome = _worker(
-                note, position, 0,
-                self.vault, self.roster, db_path, print_lock, self.log,
-            )
+            try:
+                outcome = _worker(
+                    note, position, 0,
+                    self.vault, self.roster, db_path, print_lock, self.log,
+                )
+            except Exception as e:
+                print(f"       ── WORKER CRASH: {e} — continuing loop", flush=True)
+                self.log.topic_failed(note, str(e))
+                self._stop_event.wait(self.sleep_between)
+                continue
 
             self._total_researched += 1
             batch_count += 1
@@ -544,8 +550,11 @@ class LoopScheduler:
                     print(f"       ── FAILED: {outcome.error}", flush=True)
 
             # Rebuild after each topic in loop mode
-            self.vault.rebuild_backlinks()
-            self.vault.rebuild_index()
+            try:
+                self.vault.rebuild_backlinks()
+                self.vault.rebuild_index()
+            except Exception as e:
+                print(f"       ── rebuild error (non-fatal): {e}", flush=True)
 
             if self._stop_event.is_set():
                 break
