@@ -42,6 +42,7 @@ _run_status: dict = {
     "last":         "",
     "active_topic": "",
     "active_model": "",
+    "active_step":  "",
     "started_at":   "",    # ISO string for JS timer
     "started_ts":   0.0,   # time.time() for server-side elapsed
 }
@@ -63,9 +64,29 @@ def _broadcast(msg: str):
 
 
 def _broadcast_event(data: dict):
-    """Convert a PhantomLogger event dict into a human-readable SSE line."""
+    """Convert a PhantomLogger event dict into a human-readable SSE line and update run status."""
     ev    = data.get("event", "")
     topic = data.get("topic", data.get("slug", ""))
+    
+    # Update global run status for dashboard visibility
+    if ev == "topic_start":
+        _run_status["active_topic"] = topic
+        if "model" in data:
+            _run_status["active_model"] = data["model"]
+    elif ev == "topic_done" or ev == "topic_failed":
+        if _run_status.get("active_topic") == topic:
+            _run_status["active_topic"] = ""
+    elif ev == "run_start":
+        _run_status["running"] = True
+        _run_status["started_ts"] = _time.time()
+        _run_status["started_at"] = datetime.now().strftime("%H:%M:%S")
+        if "model" in data:
+            _run_status["active_model"] = data["model"]
+    elif ev == "run_done":
+        _run_status["running"] = False
+        _run_status["active_topic"] = ""
+        _run_status["active_model"] = ""
+
     if ev == "run_start":
         msg = f">> run started  model={data.get('model','')}  queue={data.get('queue_size','')}"
     elif ev == "run_done":
@@ -82,8 +103,10 @@ def _broadcast_event(data: dict):
         msg = f"!! {topic}  {data.get('error','')}"
     elif ev == "tool_call":
         msg = f"   tool:{data.get('tool','')}  {topic}"
+        _run_status["active_step"] = f"Using {data.get('tool','')}"
     elif ev == "tool_result":
         msg = f"   done:{data.get('tool','')}  {data.get('elapsed_ms','')}ms"
+        _run_status["active_step"] = f"Finished {data.get('tool','')}"
     elif ev == "note_written":
         msg = f"   note saved  {data.get('slug','')}  src={data.get('sources',0)}"
     elif ev == "memory_saved":
@@ -535,6 +558,7 @@ def api_stats():
         "running":       _run_status["running"],
         "active_topic":  _run_status.get("active_topic", ""),
         "active_model":  _run_status.get("active_model", ""),
+        "active_step":   _run_status.get("active_step", ""),
         "started_at":    _run_status.get("started_at", ""),
         "elapsed_s":     elapsed,
         "last":          _run_status.get("last", ""),
@@ -577,14 +601,17 @@ def dashboard():
         t = _run_status.get("active_topic") or "initializing…"
         m = _run_status.get("active_model") or cfg.get("ollama.model", "?")
         s = _run_status.get("started_at", "")
+        step = _run_status.get("active_step", "")
+        elapsed = round(_time.time() - _run_status["started_ts"], 0) if _run_status["started_ts"] else 0
         active_panel = (
             '<div class="active-panel" id="active-panel">'
             '<div class="ap-label">Researching Now</div>'
             f'<div class="ap-topic">{_html.escape(t)}</div>'
+            + (f'<div style="color:var(--accent);font-size:12px;margin-bottom:8px">{_html.escape(step)}</div>' if step else '') +
             '<div class="ap-meta">'
             f'model: <span>{_html.escape(m)}</span>'
             f'{" &nbsp;|&nbsp; started: <span>" + _html.escape(s) + "</span>" if s else ""}'
-            f' &nbsp;|&nbsp; elapsed: <span id="ap-timer">0s</span>'
+            f' &nbsp;|&nbsp; elapsed: <span id="ap-timer">{int(elapsed)}s</span>'
             '</div></div>'
         )
 
@@ -767,8 +794,10 @@ setInterval(function(){
       var tname=d.active_topic||'initializing\u2026';
       var mname=d.active_model||'';
       var sat  =d.started_at||'';
+      var step =d.active_step||'';
       ap.innerHTML='<div class="ap-label">Researching Now</div>'
         +'<div class="ap-topic">'+tname+'</div>'
+        +(step?'<div style="color:var(--accent);font-size:12px;margin-bottom:8px">'+step+'</div>':'')
         +'<div class="ap-meta">'
         +(mname?'model: <span>'+mname+'</span> &nbsp;|&nbsp; ':'')
         +(sat?'started: <span>'+sat+'</span> &nbsp;|&nbsp; ':'')
@@ -1223,6 +1252,7 @@ def force_research(slug: str):
             _run_status["running"]      = False
             _run_status["active_topic"] = ""
             _run_status["active_model"] = ""
+            _run_status["active_step"]  = ""
             _run_status["started_ts"]   = 0.0
 
     threading.Thread(target=_do, daemon=True).start()
@@ -1309,6 +1339,7 @@ def trigger_run():
             _run_status["running"]      = False
             _run_status["active_topic"] = ""
             _run_status["active_model"] = ""
+            _run_status["active_step"]  = ""
             _run_status["started_ts"]   = 0.0
 
     threading.Thread(target=_do, daemon=True).start()
