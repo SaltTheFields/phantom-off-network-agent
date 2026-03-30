@@ -10,6 +10,21 @@ from datetime import datetime, date, timedelta
 
 from config import cfg
 
+# Global hook registry — any callable registered here receives every log event dict.
+# Used by web_app to bridge CLI-launched schedulers into the SSE live feed.
+_global_hooks: list = []
+
+
+def register_global_hook(fn) -> None:
+    """Register a callable that will be called with every log event dict."""
+    if fn not in _global_hooks:
+        _global_hooks.append(fn)
+
+
+def unregister_global_hook(fn) -> None:
+    if fn in _global_hooks:
+        _global_hooks.remove(fn)
+
 
 class PhantomLogger:
     def __init__(self, on_event=None):
@@ -67,6 +82,11 @@ class PhantomLogger:
         if self._on_event:
             try:
                 self._on_event(data)
+            except Exception:
+                pass
+        for hook in _global_hooks:
+            try:
+                hook(data)
             except Exception:
                 pass
 

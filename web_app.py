@@ -37,6 +37,7 @@ app = FastAPI(title="Phantom Agent", docs_url=None, redoc_url=None)
 _vault  = VaultManager(cfg.get("vault.path", "vault"))
 _topics = TopicManager(_vault)
 _memory = MemoryStore(cfg.get("memory.db_path", "data/memory.db"))
+
 _run_status: dict = {
     "running":      False,
     "last":         "",
@@ -121,6 +122,12 @@ def _broadcast_event(data: dict):
 def _hook_scheduler_log(scheduler):
     """Patch scheduler.log so every event is also broadcast to the live feed."""
     scheduler.log._on_event = _broadcast_event
+
+
+# Register as global hook so CLI-launched loop schedulers also stream to browser.
+# Must be after _broadcast_event is defined.
+import logger as _logger_mod
+_logger_mod.register_global_hook(_broadcast_event)
 
 
 # ── ASCII Banner ───────────────────────────────────────────────────────────────
@@ -261,6 +268,19 @@ tr:hover td{background:#121212; color: #fff;}
 .btn-group { display: flex; flex-direction: column; gap: 4px; }
 .btn-desc { font-size: 9px; color: #444; padding-left: 2px; max-width: 140px; line-height: 1.2; }
 
+/* ── Log event colors (static log + live feed share these classes) ── */
+.lc-run    {color:var(--accent);font-weight:bold}
+.lc-start  {color:#93c5fd}
+.lc-done   {color:#6bcb77;font-weight:bold}
+.lc-fail   {color:#ff6b6b;font-weight:bold}
+.lc-search {color:#c4b5fd}
+.lc-fetch  {color:#7dd3fc}
+.lc-tool   {color:#4a4a5a}
+.lc-note   {color:#4ecdc4}
+.lc-memory {color:#a78bfa}
+.lc-warn   {color:#ffd93d}
+.lc-info   {color:#6b7280}
+
 /* ── Log Colors & Container ── */
 #log-container {
   background:#0c0c0c;
@@ -308,13 +328,16 @@ tr:hover td{background:#121212; color: #fff;}
 #progress-feed{padding:10px;max-height:280px;overflow-y:auto;font-size:11px;line-height:1.5}
 .pline{padding:1px 0;border-bottom:1px solid #0f0f0f;animation:fadeSlide .25s ease-out}
 @keyframes fadeSlide{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
-.pline.lv-run  {color:var(--accent)}
-.pline.lv-done {color:#6bcb77}
-.pline.lv-fail {color:#ff6b6b}
-.pline.lv-tool {color:#333}
-.pline.lv-warn {color:#ffd93d}
-.pline.lv-note {color:#4ecdc4}
-.pline.lv-info {color:#666}
+.pline.lv-run   {color:var(--accent);font-weight:bold}
+.pline.lv-done  {color:#6bcb77}
+.pline.lv-fail  {color:#ff6b6b;font-weight:bold}
+.pline.lv-tool  {color:#4a4a5a}
+.pline.lv-warn  {color:#ffd93d}
+.pline.lv-note  {color:#4ecdc4}
+.pline.lv-info  {color:#7a7a8a}
+.pline.lv-think {color:#888899;font-style:italic}
+.pline.lv-cache {color:#a78bfa}
+.pline.lv-feed  {color:#f472b6}
 
 /* ── Nav ── */
 nav{
@@ -465,13 +488,18 @@ def _depth_bar(depth: int) -> str:
 def _log_event_class(data: dict) -> str:
     ev  = data.get("event", "")
     lvl = data.get("level", "INFO")
-    if lvl == "ERROR" or ev == "topic_failed":  return "lc-fail"
-    if lvl == "WARN"  or ev == "warn":          return "lc-warn"
-    if ev in ("run_start", "run_done"):         return "lc-run"
-    if ev == "topic_start":                     return "lc-start"
-    if ev == "topic_done":                      return "lc-done"
-    if ev in ("tool_call", "tool_result"):      return "lc-tool"
-    if ev in ("note_written", "memory_saved"):  return "lc-note"
+    tool = data.get("tool", "")
+    if lvl == "ERROR" or ev == "topic_failed":     return "lc-fail"
+    if lvl == "WARN"  or ev == "warn":             return "lc-warn"
+    if ev in ("run_start", "run_done"):            return "lc-run"
+    if ev == "topic_start":                        return "lc-start"
+    if ev == "topic_done":                         return "lc-done"
+    if ev == "tool_call" and tool == "web_search": return "lc-search"
+    if ev == "tool_call" and tool == "fetch_page": return "lc-fetch"
+    if ev == "tool_call" and tool == "remember":   return "lc-note"
+    if ev in ("tool_call", "tool_result"):         return "lc-tool"
+    if ev == "note_written":                       return "lc-note"
+    if ev == "memory_saved":                       return "lc-memory"
     return "lc-info"
 
 
@@ -482,18 +510,23 @@ def _format_log_line(raw: str) -> str:
         ev  = d.get("event", "")
         cls = _log_event_class(d)
         topic = d.get("topic", d.get("slug", ""))
+        tool  = d.get("tool", "")
         if ev == "run_start":
-            msg = f">> run  model={d.get('model','')}  queue={d.get('queue_size','')}"
+            msg = f">> run started  model={d.get('model','')}  queue={d.get('queue_size','')}"
         elif ev == "run_done":
-            msg = f"== done  ok={d.get('topics_completed',0)}  fail={d.get('topics_failed',0)}  {d.get('total_elapsed_s','')}s"
+            msg = f"== run done  ok={d.get('topics_completed',0)}  fail={d.get('topics_failed',0)}  elapsed={d.get('total_elapsed_s','')}s"
         elif ev == "topic_start":
-            msg = f"-> [{d.get('position','')}/{d.get('of','')}] {topic}  {d.get('priority','')} {d.get('type','')}"
+            msg = f"-> [{d.get('position','')}/{d.get('of','')}] {topic}  {d.get('priority','')} / {d.get('type','')}"
         elif ev == "topic_done":
-            msg = f"ok {topic}  {d.get('elapsed_s','')}s  src={d.get('sources',0)}  mem={d.get('memories',0)}"
+            msg = f"ok {topic}  {d.get('elapsed_s','')}s  src={d.get('sources',0)}  mem={d.get('memories',0)}  iter={d.get('iterations',0)}"
         elif ev == "topic_failed":
-            msg = f"!! {topic}  {d.get('error','')}"
+            msg = f"!! FAILED {topic}  {d.get('error','')}"
         elif ev == "tool_call":
-            msg = f"   tool:{d.get('tool','')}  {topic}"
+            extra = d.get("query") or d.get("url") or d.get("key") or ""
+            msg = f"   {tool}  {str(extra)[:80]}"
+        elif ev == "tool_result":
+            extra = f"  results={d.get('results_count','')}" if d.get("results_count") else ""
+            msg = f"   {tool} done  {d.get('elapsed_ms','')}ms{extra}"
         elif ev == "note_written":
             msg = f"   note saved  {d.get('slug','')}  src={d.get('sources',0)}"
         elif ev == "memory_saved":
@@ -726,15 +759,19 @@ def dashboard():
   var logBox=document.getElementById('log-container');
   
   function cls(t){
-    if(/^!!|error|fail/i.test(t))   return 'lv-fail';
-    if(/^ok |done|complete/i.test(t)) return 'lv-done';
-    if(/^>>/i.test(t))              return 'lv-run';
-    if(/^==/i.test(t))              return 'lv-run';
-    if(/^->/i.test(t))              return 'lv-info';
-    if(/tool:|done:/i.test(t))      return 'lv-tool';
-    if(/note saved|memory/i.test(t))return 'lv-note';
-    if(/warn/i.test(t))             return 'lv-warn';
-    return 'lv-info';
+    if(/^!!|FAILED|error/i.test(t))           return 'lc-fail';
+    if(/^ok |run done/i.test(t))              return 'lc-done';
+    if(/^>> run/i.test(t))                    return 'lc-run';
+    if(/^== run done/i.test(t))               return 'lc-run';
+    if(/^ *web_search/i.test(t))              return 'lc-search';
+    if(/^ *fetch_page/i.test(t))              return 'lc-fetch';
+    if(/^->/i.test(t))                        return 'lc-start';
+    if(/note saved/i.test(t))                 return 'lc-note';
+    if(/memory #/i.test(t))                   return 'lc-memory';
+    if(/warn/i.test(t))                       return 'lc-warn';
+    if(/ done [0-9]+ms/i.test(t))             return 'lc-tool';
+    if(/^   [a-z_]+ /i.test(t))              return 'lc-tool';
+    return 'lc-info';
   }
 
   function appendToLog(text) {

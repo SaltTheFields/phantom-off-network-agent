@@ -1,8 +1,18 @@
 import re
 import time
 import requests
+from datetime import datetime
 from urllib.parse import urlparse
 from config import cfg
+
+
+def _scheme_variants(url: str) -> list[str]:
+    """Return [original_url, scheme-flipped_url] so we try both http and https."""
+    if url.startswith("https://"):
+        return [url, "http://" + url[8:]]
+    elif url.startswith("http://"):
+        return [url, "https://" + url[7:]]
+    return [url]
 
 
 # ── Domain credibility tiers ──────────────────────────────────────────────────
@@ -215,55 +225,85 @@ def fetch_page(url: str) -> str:
     timeout = cfg.get("search.fetch_timeout", 15)
     max_chars = 4000
 
-    # Validate URL looks reasonable
     if not url.startswith(("http://", "https://")):
         return f"Invalid URL (must start with http:// or https://): {url}"
 
     score, tier = score_domain(url)
     cred_note = f"[source credibility: {tier} ({score}/5)]"
 
-    def _do_fetch():
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; research-agent/1.0)"}
-        resp = requests.get(url, timeout=timeout, headers=headers)
+    # ── Check article cache first ──────────────────────────────────────────
+    try:
+        from article_cache import get_cached, save_cache
+        cached = get_cached(url)
+        if cached:
+            age_h = (datetime.now() - datetime.fromisoformat(cached["fetched_at"])).total_seconds() / 3600
+            cache_note = f"[cached {age_h:.1f}h ago, fetch #{cached['fetch_count']}]"
+            return _truncate(cached["content"], max_chars, url, f"{cred_note} {cache_note}")
+    except Exception:
+        save_cache = None
+
+    # ── Fetch helpers ──────────────────────────────────────────────────────
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; research-agent/1.0)"}
+
+    def _do_fetch(target_url: str) -> str:
+        resp = requests.get(target_url, timeout=timeout, headers=headers)
         resp.raise_for_status()
         return resp.text
 
-    try:
-        html = _retry(
-            _do_fetch,
-            max_retries=3,
-            base_delay=1.5,
-            exceptions=(
-                requests.exceptions.Timeout,
-                requests.exceptions.ConnectionError,
-            ),
-        )
-
-        # Try trafilatura first (best quality extraction)
+    def _extract(html: str) -> str:
         try:
             import trafilatura
             text = trafilatura.extract(html, include_links=False, include_images=False)
             if text and len(text.strip()) > 100:
-                return _truncate(text, max_chars, url, cred_note)
+                return text
         except ImportError:
             pass
-
-        # Fallback: BeautifulSoup tag stripping
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(html, "lxml")
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
         text = soup.get_text(separator="\n")
         text = re.sub(r"\n{3,}", "\n\n", text)
-        text = re.sub(r"[ \t]+", " ", text)
-        return _truncate(text.strip(), max_chars, url, cred_note)
+        return re.sub(r"[ \t]+", " ", text).strip()
 
-    except requests.exceptions.Timeout:
-        return f"Timed out fetching {url} after 3 attempts (>{timeout}s each)"
-    except requests.exceptions.HTTPError as e:
-        return f"HTTP error fetching {url}: {e}"
-    except Exception as e:
-        return f"Failed to fetch {url}: {e}"
+    # ── Try original URL with retries, then flip scheme ────────────────────
+    last_err = None
+    for try_url in _scheme_variants(url):
+        try:
+            html = _retry(
+                lambda u=try_url: _do_fetch(u),
+                max_retries=3,
+                base_delay=1.5,
+                exceptions=(requests.exceptions.Timeout, requests.exceptions.ConnectionError),
+            )
+            text = _extract(html)
+
+            # Save to cache and annotate if content changed
+            extra_note = ""
+            try:
+                if save_cache:
+                    result = save_cache(try_url, text)
+                    if result["fetch_count"] > 1 and result["changed"]:
+                        extra_note = f" [UPDATED: {result['diff_summary']}]"
+                    elif result["fetch_count"] > 1:
+                        extra_note = f" [unchanged, fetch #{result['fetch_count']}]"
+            except Exception:
+                pass
+
+            scheme_note = f" [via {try_url.split('://')[0]}]" if try_url != url else ""
+            return _truncate(text, max_chars, try_url, f"{cred_note}{scheme_note}{extra_note}")
+
+        except requests.exceptions.HTTPError as e:
+            last_err = e
+            continue
+        except requests.exceptions.Timeout:
+            last_err = Exception(f"timed out after 3 attempts (>{timeout}s each)")
+            continue
+        except Exception as e:
+            last_err = e
+            continue
+
+    return f"Failed to fetch {url}: {last_err}"
 
 
 def _truncate(text: str, max_chars: int, url: str, cred_note: str = "") -> str:
