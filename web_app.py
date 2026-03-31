@@ -764,7 +764,8 @@ def _format_log_line(raw: str) -> str:
 
 def _nav(active: str = "") -> str:
     pages = [("/", "Dashboard"), ("/vault", "Vault"), ("/graph", "Graph"),
-             ("/topics", "Topics"), ("/memory", "Memory"), ("/agents", "Agents"), ("/settings", "Settings")]
+             ("/topics", "Topics"), ("/sources", "Sources"), ("/memory", "Memory"),
+             ("/agents", "Agents"), ("/settings", "Settings")]
     links = "".join(
         f'<a href="{h}" class="{"active" if label.lower() == active else ""}">{label}</a>'
         for h, label in pages
@@ -1128,6 +1129,113 @@ setInterval(function(){
         f'<div class="grid2"><div>{left}</div><div>{right}</div></div>'
         f'{js}'
     ), "dashboard")
+
+
+# ── Sources audit ──────────────────────────────────────────────────────────────
+
+_CRED_LABEL = {1: "academic", 2: "quality-news", 3: "general", 4: "aggregator", 5: "social"}
+_CRED_COLOR = {1: "#6bcb77", 2: "#7dd3fc", 3: "#888888", 4: "#ffd93d", 5: "#ff6b6b"}
+
+@app.get("/sources", response_class=HTMLResponse)
+def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
+    import sqlite3 as _sqlite3
+    db_path = cfg.get("memory.db_path", "data/memory.db")
+    rows = []
+    try:
+        conn = _sqlite3.connect(db_path)
+        conn.row_factory = _sqlite3.Row
+        cur = conn.cursor()
+        q = "SELECT url, domain, title, first_fetched, last_fetched, fetch_count, topic_slug, reliability FROM sources"
+        filters, params = [], []
+        if topic:
+            filters.append("topic_slug = ?"); params.append(topic)
+        if cred:
+            try: filters.append("reliability = ?"); params.append(int(cred))
+            except ValueError: pass
+        if filters:
+            q += " WHERE " + " AND ".join(filters)
+        order = {"fetch_count": "fetch_count DESC", "domain": "domain ASC",
+                 "last_fetched": "last_fetched DESC", "reliability": "reliability ASC"}.get(sort, "fetch_count DESC")
+        q += f" ORDER BY {order}"
+        rows = [dict(r) for r in cur.execute(q, params).fetchall()]
+        conn.close()
+    except Exception:
+        pass
+
+    # Summary stats
+    total = len(rows)
+    by_cred = {}
+    for r in rows:
+        k = r.get("reliability") or 3
+        by_cred[k] = by_cred.get(k, 0) + 1
+    domains = len({r["domain"] for r in rows})
+
+    stats_html = (
+        f'<div class="stats">'
+        f'<div class="stat-card"><div class="stat-num">{total}</div><div class="stat-lbl">Sources</div></div>'
+        f'<div class="stat-card"><div class="stat-num">{domains}</div><div class="stat-lbl">Domains</div></div>'
+        + "".join(
+            f'<div class="stat-card"><div class="stat-num" style="color:{_CRED_COLOR.get(k,"#888")}">{v}</div>'
+            f'<div class="stat-lbl">{_CRED_LABEL.get(k,str(k))}</div></div>'
+            for k, v in sorted(by_cred.items())
+        )
+        + '</div>'
+    )
+
+    # Filter controls
+    all_topics = sorted({r["topic_slug"] for r in rows if r.get("topic_slug")})
+    topic_opts = '<option value="">All topics</option>' + "".join(
+        f'<option value="{t}" {"selected" if t==topic else ""}>{t}</option>' for t in all_topics
+    )
+    cred_opts = '<option value="">All tiers</option>' + "".join(
+        f'<option value="{k}" {"selected" if str(k)==cred else ""}>{_CRED_LABEL[k]}</option>'
+        for k in sorted(_CRED_LABEL)
+    )
+    sort_opts = "".join(
+        f'<option value="{v}" {"selected" if v==sort else ""}>{l}</option>'
+        for v, l in [("fetch_count","Fetch Count"), ("domain","Domain"), ("last_fetched","Last Fetched"), ("reliability","Credibility")]
+    )
+    filter_bar = (
+        f'<form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center">'
+        f'<select name="topic" onchange="this.form.submit()">{topic_opts}</select>'
+        f'<select name="cred" onchange="this.form.submit()">{cred_opts}</select>'
+        f'<select name="sort" onchange="this.form.submit()">{sort_opts}</select>'
+        f'<a href="/sources" style="font-size:11px;color:#444;margin-left:4px">reset</a>'
+        f'</form>'
+    )
+
+    # Table rows
+    def _cred_badge(r):
+        k = r.get("reliability") or 3
+        col = _CRED_COLOR.get(k, "#888")
+        lbl = _CRED_LABEL.get(k, str(k))
+        return f'<span style="background:{col}22;color:{col};padding:1px 7px;border-radius:3px;font-size:10px">{lbl}</span>'
+
+    def _short_url(url, n=60):
+        return _html.escape(url[:n] + ("…" if len(url) > n else ""))
+
+    table_rows = "".join(
+        f'<tr>'
+        f'<td style="max-width:340px;overflow:hidden"><a href="{_html.escape(r["url"])}" target="_blank" '
+        f'style="color:var(--accent-dim);font-size:11px">{_short_url(r["url"])}</a></td>'
+        f'<td style="color:#999;font-size:11px">{_html.escape(r["domain"] or "")}</td>'
+        f'<td>{_cred_badge(r)}</td>'
+        f'<td style="text-align:center;color:var(--accent)">{r["fetch_count"]}</td>'
+        f'<td style="color:#444;font-size:11px">{str(r.get("last_fetched",""))[:10]}</td>'
+        f'<td><a href="/vault/{_html.escape(r["topic_slug"] or "")}" '
+        f'style="color:#446;font-size:11px">{_html.escape(r["topic_slug"] or "")}</a></td>'
+        f'</tr>'
+        for r in rows
+    ) or f'<tr><td colspan="6" class="empty">No sources yet</td></tr>'
+
+    body = (
+        f'<h1>Sources <span style="color:#333;font-size:13px">audit log</span></h1>'
+        + stats_html + filter_bar
+        + '<div class="table-wrap"><table><thead><tr>'
+        + '<th>URL</th><th>Domain</th><th>Credibility</th><th>Fetches</th><th>Last Seen</th><th>Topic</th>'
+        + f'</tr></thead><tbody>{table_rows}</tbody></table></div>'
+    )
+    return _page("Sources", body, "sources")
 
 
 @app.get("/settings", response_class=HTMLResponse)

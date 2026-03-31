@@ -38,7 +38,8 @@
     "loop_sleep_between_topics_s": 30,
     "loop_batch_size": 3,
     "loop_batch_rest_s": 120,
-    "loop_max_runtime_hours": 0
+    "loop_max_runtime_hours": 0,
+    "depth_soft_cap": 5
   },
   "web": {
     "host": "127.0.0.1",

@@ -263,7 +263,8 @@ class TopicManager:
         Pick one topic using weighted random selection.
         Weight = priority_weight * depth_decay so:
         - High priority always picked more often than medium/low
-        - Shallower topics get a boost over deeper ones within same priority
+        - Shallower topics get a strong boost — exponential decay per depth level
+        - Topics at or above depth_soft_cap get an extra 0.1x penalty
         - Every topic always has a non-zero chance (no starvation)
         """
         if not candidates:
@@ -272,12 +273,17 @@ class TopicManager:
             return candidates[0]
 
         PRIORITY_WEIGHT = {"high": 10, "medium": 3, "low": 1}
+        soft_cap = cfg.get("schedule.depth_soft_cap", 5)
 
         def _weight(note: Note) -> float:
             base = PRIORITY_WEIGHT.get(note.priority, 3)
-            # Depth decay: weight halves every 2 depth levels, floor at 0.1
-            decay = max(0.1, 1.0 / (1 + note.research_depth * 0.5))
-            return base * decay
+            # Exponential decay: 0.7^depth
+            # depth 0→1.0, 1→0.70, 2→0.49, 3→0.34, 4→0.24, 5→0.17, 6→0.12
+            decay = 0.7 ** note.research_depth
+            # Hard soft-cap penalty: topics at depth >= cap are heavily deprioritised
+            if note.research_depth >= soft_cap:
+                decay *= 0.1
+            return max(0.01, base * decay)
 
         weights = [_weight(n) for n in candidates]
         return random.choices(candidates, weights=weights, k=1)[0]
