@@ -215,6 +215,16 @@ def _worker(
                 _p(f"  ! consensus failed: {e}")
                 pass  # consensus is optional — never fail the whole run
 
+        # ── Critic loop ────────────────────────────────────────────────────────
+        # A small quantized model fact-checks the draft note against the raw
+        # source snippets still in the message context, and appends any warnings.
+        # Only runs when agent.critic_enabled = true (off by default).
+        if cfg.get("agent.critic_enabled", False):
+            try:
+                _run_critic(note, vault, messages, roster, _p, log)
+            except Exception as e:
+                _p(f"  ! critic failed (non-fatal): {e}")
+
         updated_note = vault.read_note(note.slug)
         if updated_note:
             outcome.words_written = len(updated_note.body.split())
@@ -259,6 +269,89 @@ def _worker(
         memory.close()
 
     return outcome
+
+
+# ── Critic loop ───────────────────────────────────────────────────────────────
+
+_CRITIC_PROMPT = """\
+You are a fact-checking critic. You will be given a draft research note and the raw source evidence used to write it.
+Your job: identify any factual claims in the note that are NOT supported by the sources, or that directly contradict the sources.
+
+Be concise. Only flag genuine factual errors or unsupported claims — do not nitpick phrasing or style.
+If everything checks out, respond with exactly: PASS
+
+If you find issues, list each as:
+> [!critic] Unsupported: "<claim from note>" — not found in sources
+> [!critic] Contradiction: "<claim from note>" contradicts "<what source says>"
+
+Draft note to check:
+{note_body}
+
+---
+Source evidence:
+{source_snippets}
+"""
+
+_CRITIC_MAX_SOURCE_CHARS = 3000  # cap total source text fed to critic
+
+
+def _run_critic(note, vault, messages: list[dict], roster, _p, log) -> None:
+    """
+    Fact-check the draft note against source snippets from the research messages.
+    Appends any [!critic] callouts directly to the note body.
+    Uses broker_model (fast/small) — not the main research model.
+    """
+    from config import cfg as _cfg
+    current = vault.read_note(note.slug)
+    if not current or not current.body:
+        return
+
+    # Extract source snippets from [Tool result for fetch_page] messages
+    snippets = []
+    total = 0
+    for msg in messages:
+        content = msg.get("content", "")
+        if "[Tool result for fetch_page]" in content and total < _CRITIC_MAX_SOURCE_CHARS:
+            # grab the content after the header line
+            snippet = content.split("\n", 1)[-1][:1000]
+            snippets.append(snippet)
+            total += len(snippet)
+
+    if not snippets:
+        return  # nothing to check against
+
+    source_text = "\n\n---\n\n".join(snippets)[:_CRITIC_MAX_SOURCE_CHARS]
+    # Trim note body to avoid overflowing the critic's context
+    note_preview = current.body[:2000]
+
+    prompt = _CRITIC_PROMPT.format(note_body=note_preview, source_snippets=source_text)
+
+    from llm import chat
+    # Use agent.critic_model if set, else broker_model, else primary model
+    critic_model = (
+        _cfg.get("agent.critic_model", "") or
+        _cfg.get("ollama.broker_model", "") or
+        _cfg.get("ollama.model")
+    )
+    _p(f"→ critic: checking facts with {critic_model}")
+
+    response = chat(
+        [{"role": "user", "content": prompt}],
+        system_prompt="You are a strict fact-checking critic. Be brief and precise.",
+        stream=False,
+        model=critic_model,
+    ).strip()
+
+    if response.upper() == "PASS" or not response:
+        _p(f"  ✓ critic: PASS")
+        return
+
+    # Append critic warnings to the note body
+    critic_section = f"\n\n## Critic Review\n\n{response}\n"
+    current.body = current.body.rstrip() + critic_section
+    vault.write_note(current)
+    _p(f"  ⚑ critic: flagged issues — see note for [!critic] callouts")
+    log.warn("critic_flagged", topic=note.slug, issues=response[:200])
 
 
 # ── Synthesis worker ─────────────────────────────────────────────────────────

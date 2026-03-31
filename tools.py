@@ -175,6 +175,22 @@ def _retry(fn, max_retries: int = 3, base_delay: float = 1.0, exceptions=(Except
                 time.sleep(base_delay * (2 ** attempt))
     raise last_exc
 
+TOOL_REGISTRY_LOCAL = [
+    {
+        "name": "ingest_local_file",
+        "description": (
+            "Read a local file (PDF, .txt, .md, .docx) and store its content as searchable memories. "
+            "Use to ingest research papers, notes, or documents from your machine into long-term memory. "
+            "Pass an absolute path or a path relative to the agent working directory."
+        ),
+        "parameters": {
+            "path": "string — absolute or relative path to the file",
+            "tags": "string (optional) — comma-separated tags for all stored chunks",
+        },
+        "example": '{"tool": "ingest_local_file", "path": "C:/research/paper.pdf", "tags": "physics,quantum"}',
+    },
+]
+
 TOOL_REGISTRY_SYNTHESIS_ONLY = [
     {
         "name": "read_local_vault",
@@ -194,8 +210,9 @@ TOOL_REGISTRY = [
     {
         "name": "web_search",
         "description": (
-            "Search the web via DuckDuckGo. Use for current events, facts you don't know, "
-            "or finding sources. Returns titles, URLs, and snippets."
+            "Search the web (via SearXNG if configured, otherwise DuckDuckGo). "
+            "Use for current events, facts you don't know, or finding sources. "
+            "Returns titles, URLs, and snippets."
         ),
         "parameters": {
             "query": "string — the search query",
@@ -262,6 +279,19 @@ TOOL_REGISTRY = [
         },
         "example": '{"tool": "update_note", "topic": "Python asyncio", "body": "# Python asyncio\\n\\n..."}',
     },
+    {
+        "name": "ingest_local_file",
+        "description": (
+            "Read a local file (PDF, .txt, .md, .docx) and store its content as searchable memories. "
+            "Use to ingest research papers or documents from your machine. "
+            "Pass an absolute path to the file."
+        ),
+        "parameters": {
+            "path": "string — absolute path to the file",
+            "tags": "string (optional) — comma-separated tags for all stored chunks",
+        },
+        "example": '{"tool": "ingest_local_file", "path": "/home/user/paper.pdf", "tags": "physics,quantum"}',
+    },
 ]
 
 
@@ -278,31 +308,101 @@ def format_tools_for_prompt() -> str:
     return "\n".join(lines)
 
 
+def _get_session() -> requests.Session:
+    """
+    Return a requests.Session. If search.dns_resolver is set in config,
+    patch the session to use that IP for all DNS resolution (custom DNS / AdGuard).
+    """
+    session = requests.Session()
+    dns_ip = cfg.get("search.dns_resolver", "")
+    if dns_ip:
+        try:
+            import socket
+            _orig_getaddrinfo = socket.getaddrinfo
+
+            def _patched_getaddrinfo(host, port, *args, **kwargs):
+                # Resolve via our custom DNS server using dnspython if available,
+                # otherwise fall back to stdlib (which still uses system DNS)
+                try:
+                    import dns.resolver
+                    resolver = dns.resolver.Resolver()
+                    resolver.nameservers = [dns_ip]
+                    answers = resolver.resolve(host, "A")
+                    ip = str(answers[0])
+                    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))]
+                except Exception:
+                    return _orig_getaddrinfo(host, port, *args, **kwargs)
+
+            # Patch at session level via a custom HTTPAdapter is not easily doable,
+            # so we set the resolver on the thread-local socket — good enough for
+            # single-threaded fetch calls within a worker.
+            socket.getaddrinfo = _patched_getaddrinfo
+        except Exception:
+            pass  # DNS patching is best-effort; never crash on this
+    return session
+
+
+def _searxng_search(query: str, n: int) -> list[dict] | None:
+    """
+    Try SearXNG. Returns list of {title, href, body} dicts, or None on failure.
+    Configured via search.searxng_url in config.json.
+    """
+    base_url = cfg.get("search.searxng_url", "").rstrip("/")
+    if not base_url:
+        return None
+    timeout = cfg.get("search.searxng_timeout", 10)
+    try:
+        resp = requests.get(
+            f"{base_url}/search",
+            params={"q": query, "format": "json", "categories": "general", "count": n},
+            timeout=timeout,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; research-agent/1.0)"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results = []
+        for r in data.get("results", [])[:n]:
+            results.append({
+                "href":  r.get("url", ""),
+                "title": r.get("title", "No title"),
+                "body":  r.get("content", ""),
+            })
+        return results if results else None
+    except Exception:
+        return None
+
+
 def web_search(query: str, max_results: int = None) -> str:
     n = max_results or cfg.get("search.max_results", 5)
 
-    def _do_search():
-        from ddgs import DDGS
-        with DDGS() as ddgs:
-            return list(ddgs.text(query, max_results=n))
+    # ── Try SearXNG first ────────────────────────────────────────────────────
+    results = _searxng_search(query, n)
+    source_label = "SearXNG"
 
-    try:
-        results = _retry(_do_search, max_retries=3, base_delay=1.0)
+    # ── Fall back to DuckDuckGo ──────────────────────────────────────────────
+    if not results:
+        source_label = "DuckDuckGo"
+        def _do_ddgs():
+            from ddgs import DDGS
+            with DDGS() as ddgs:
+                return list(ddgs.text(query, max_results=n))
+        try:
+            results = _retry(_do_ddgs, max_retries=3, base_delay=1.0)
+        except Exception as e:
+            return f"Search failed: {e}"
 
-        if not results:
-            return f"No results found for: {query}"
+    if not results:
+        return f"No results found for: {query}"
 
-        lines = [f"Search results for: {query}\n"]
-        for i, r in enumerate(results, 1):
-            url = r.get("href", "")
-            score, tier = score_domain(url)
-            lines.append(f"{i}. {r.get('title', 'No title')}  [credibility: {tier} ({score}/5)]")
-            lines.append(f"   URL: {url}")
-            lines.append(f"   {r.get('body', '')[:200]}")
-            lines.append("")
-        return "\n".join(lines)
-    except Exception as e:
-        return f"Search failed: {e}"
+    lines = [f"Search results for: {query}  [via {source_label}]\n"]
+    for i, r in enumerate(results, 1):
+        url = r.get("href", "")
+        score, tier = score_domain(url)
+        lines.append(f"{i}. {r.get('title', 'No title')}  [credibility: {tier} ({score}/5)]")
+        lines.append(f"   URL: {url}")
+        lines.append(f"   {r.get('body', '')[:200]}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def fetch_page(url: str) -> str:
@@ -328,9 +428,10 @@ def fetch_page(url: str) -> str:
 
     # ── Fetch helpers ──────────────────────────────────────────────────────
     headers = {"User-Agent": "Mozilla/5.0 (compatible; research-agent/1.0)"}
+    session = _get_session()
 
     def _do_fetch(target_url: str) -> str:
-        resp = requests.get(target_url, timeout=timeout, headers=headers)
+        resp = session.get(target_url, timeout=timeout, headers=headers)
         resp.raise_for_status()
         return resp.text
 
@@ -395,6 +496,91 @@ def _truncate(text: str, max_chars: int, url: str, cred_note: str = "") -> str:
     if len(text) <= max_chars:
         return f"{header}\n\n{text}"
     return f"{header} — truncated to {max_chars} chars\n\n{text[:max_chars]}..."
+
+
+def _ingest_local_file(path: str, tags: str, memory_store) -> str:
+    """
+    Extract text from a local file and store it as chunked memories.
+    Supports: .pdf, .txt, .md, .docx
+    Chunks by paragraph (~500 chars each) and saves each chunk to memory_store.
+    """
+    import os
+    if not os.path.exists(path):
+        return f"Error: file not found: {path}"
+
+    ext = os.path.splitext(path)[1].lower()
+    text = ""
+
+    try:
+        if ext == ".pdf":
+            try:
+                import pdfplumber
+                with pdfplumber.open(path) as pdf:
+                    text = "\n\n".join(
+                        page.extract_text() or "" for page in pdf.pages
+                    )
+            except ImportError:
+                # fallback: pypdf
+                try:
+                    from pypdf import PdfReader
+                    reader = PdfReader(path)
+                    text = "\n\n".join(
+                        page.extract_text() or "" for page in reader.pages
+                    )
+                except ImportError:
+                    return "Error: PDF support requires pdfplumber or pypdf. Install with: pip install pdfplumber"
+
+        elif ext in (".txt", ".md"):
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+
+        elif ext == ".docx":
+            try:
+                import docx
+                doc = docx.Document(path)
+                text = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            except ImportError:
+                return "Error: .docx support requires python-docx. Install with: pip install python-docx"
+
+        else:
+            return f"Error: unsupported file type '{ext}'. Supported: .pdf, .txt, .md, .docx"
+
+    except Exception as e:
+        return f"Error reading {path}: {e}"
+
+    if not text.strip():
+        return f"No text extracted from {path}"
+
+    # Chunk by paragraph, ~500 chars each
+    paragraphs = [p.strip() for p in re.split(r"\n{2,}", text) if p.strip()]
+    chunks = []
+    current = ""
+    for para in paragraphs:
+        if len(current) + len(para) > 500 and current:
+            chunks.append(current.strip())
+            current = para
+        else:
+            current = (current + "\n\n" + para).strip() if current else para
+    if current:
+        chunks.append(current.strip())
+
+    if not memory_store:
+        return f"Memory store not available — extracted {len(chunks)} chunks but could not save"
+
+    saved = 0
+    fname = os.path.basename(path)
+    chunk_tags = f"local-file,{fname},{tags}" if tags else f"local-file,{fname}"
+    for chunk in chunks:
+        try:
+            memory_store.save_fact(chunk, tags=chunk_tags)
+            saved += 1
+        except Exception:
+            pass
+
+    return (
+        f"Ingested {fname}: {len(chunks)} chunks, {saved} saved to memory. "
+        f"Tags: {chunk_tags}. Use recall to search this content."
+    )
 
 
 def execute_tool(tool_call: dict, memory_store, vault=None, topics=None) -> str:
@@ -521,6 +707,13 @@ def execute_tool(tool_call: dict, memory_store, vault=None, topics=None) -> str:
             vault.rebuild_backlinks()
             queued_msg = f" | auto-queued: {', '.join(auto_queued)}" if auto_queued else ""
             return f"Note updated: {note.name} ({note.slug}.md){queued_msg}"
+
+        elif name == "ingest_local_file":
+            path = tool_call.get("path", "")
+            if not path:
+                return "Error: ingest_local_file requires a 'path' parameter"
+            tags = tool_call.get("tags", "local-ingest")
+            return _ingest_local_file(path, tags, memory_store)
 
         elif name == "read_local_vault":
             if vault is None:
