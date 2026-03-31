@@ -1,41 +1,41 @@
-{
-  "agents": [
-    {
-      "model": "Tohur/natsumura-storytelling-rp-llama-3.1:latest",
-      "nickname": "Storyteller",
-      "assigned_types": [],
-      "assigned_topics": [],
-      "capabilities": ["creative", "roleplay", "storytelling", "spicy"],
-      "system_prompt": "You are a creative storyteller and roleplay expert. Your prose is vivid and engaging.",
-      "description": "RP-optimized Llama 3.1"
-    },
-    {
-      "model": "artifish/llama3.2-uncensored:latest",
-      "nickname": "FreeThinker",
-      "assigned_types": [],
-      "assigned_topics": [],
-      "capabilities": ["unlocked", "uncensored", "direct"],
-      "system_prompt": "You are an unlocked assistant. You answer all questions directly without moralizing or lecturing.",
-      "description": "Uncensored Llama 3.2"
-    },
-    {
-      "model": "qwen2.5-coder:7b",
-      "nickname": "Coder",
-      "assigned_types": ["tech"],
-      "assigned_topics": [],
-      "capabilities": ["coding", "programming", "technical"],
-      "system_prompt": "You are a senior software engineer and technical researcher. Your code is clean and idiomatic.",
-      "description": "Technical and coding specialist"
-    },
-    {
-      "model": "phi3:mini",
-      "nickname": "Broker",
-      "assigned_types": [],
-      "assigned_topics": [],
-      "capabilities": ["routing", "analysis"],
-      "system_prompt": "You are a helpful assistant.",
-      "description": "Fast model for routing"
-    }
-  ],
-  "default_model": "llama3.1:8b"
-}
+{
+  "agents": [
+    {
+      "model": "Tohur/natsumura-storytelling-rp-llama-3.1:latest",
+      "nickname": "Storyteller",
+      "assigned_types": [],
+      "assigned_topics": [],
+      "capabilities": ["creative", "roleplay", "storytelling", "spicy"],
+      "system_prompt": "You are a creative storyteller and roleplay expert. Your prose is vivid and engaging.",
+      "description": "RP-optimized Llama 3.1"
+    },
+    {
+      "model": "artifish/llama3.2-uncensored:latest",
+      "nickname": "FreeThinker",
+      "assigned_types": [],
+      "assigned_topics": [],
+      "capabilities": ["unlocked", "uncensored", "direct"],
+      "system_prompt": "You are an unlocked assistant. You answer all questions directly without moralizing or lecturing.",
+      "description": "Uncensored Llama 3.2"
+    },
+    {
+      "model": "qwen2.5-coder:7b",
+      "nickname": "Coder",
+      "assigned_types": ["tech"],
+      "assigned_topics": [],
+      "capabilities": ["coding", "programming", "technical"],
+      "system_prompt": "You are a senior software engineer and technical researcher. Your code is clean and idiomatic.",
+      "description": "Technical and coding specialist"
+    },
+    {
+      "model": "phi3:mini",
+      "nickname": "Broker",
+      "assigned_types": [],
+      "assigned_topics": [],
+      "capabilities": ["routing", "analysis"],
+      "system_prompt": "You are a helpful assistant.",
+      "description": "Fast model for routing"
+    }
+  ],
+  "default_model": "llama3.1:8b"
+}

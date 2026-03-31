@@ -49,44 +49,63 @@ def get_loaded_models() -> list[str]:
 
 
 def chat(messages: list[dict], system_prompt: str, stream: bool = True, model: str = None) -> str:
+    import time as _time
     base_url = cfg.get("ollama.base_url")
     model = model or cfg.get("ollama.model")
     timeout = cfg.get("ollama.timeout", 120)
     temperature = cfg.get("ollama.temperature", 0.7)
+    max_retries = cfg.get("ollama.chat_retries", 2)  # retry on timeout before giving up
 
     ollama_messages = [{"role": "system", "content": system_prompt}] + messages
 
-    try:
-        client = _ollama.Client(host=base_url, timeout=timeout)
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            client = _ollama.Client(host=base_url, timeout=timeout)
 
-        if stream:
-            full_response = ""
-            response_stream = client.chat(
-                model=model,
-                messages=ollama_messages,
-                stream=True,
-                options={"temperature": temperature},
-            )
-            for chunk in response_stream:
-                token = chunk.message.content
-                if token:
-                    print(token, end="", flush=True)
-                    full_response += token
-            print()  # newline after streamed response
-            return full_response
-        else:
-            response = client.chat(
-                model=model,
-                messages=ollama_messages,
-                stream=False,
-                options={"temperature": temperature},
-            )
-            return response.message.content
+            if stream:
+                full_response = ""
+                response_stream = client.chat(
+                    model=model,
+                    messages=ollama_messages,
+                    stream=True,
+                    options={"temperature": temperature},
+                )
+                for chunk in response_stream:
+                    token = chunk.message.content
+                    if token:
+                        print(token, end="", flush=True)
+                        full_response += token
+                print()  # newline after streamed response
+                return full_response
+            else:
+                response = client.chat(
+                    model=model,
+                    messages=ollama_messages,
+                    stream=False,
+                    options={"temperature": temperature},
+                )
+                return response.message.content
 
-    except Exception as e:
-        err_str = str(e)
-        if "connection" in err_str.lower() or "refused" in err_str.lower() or "timeout" in err_str.lower():
-            raise OllamaConnectionError(
-                f"Lost connection to Ollama at {base_url}: {e}"
-            )
-        raise
+        except Exception as e:
+            last_exc = e
+            err_str = str(e).lower()
+            is_timeout = "timeout" in err_str or "readtimeout" in err_str or "timed out" in err_str
+            is_conn_err = "connection" in err_str or "refused" in err_str
+
+            if is_timeout and attempt < max_retries - 1:
+                backoff = 15 * (attempt + 1)  # 15s, 30s, ...
+                print(f"\n  [llm] timeout on attempt {attempt + 1}/{max_retries} — retrying in {backoff}s", flush=True)
+                _time.sleep(backoff)
+                continue
+
+            if is_timeout or is_conn_err:
+                raise OllamaConnectionError(
+                    f"Lost connection to Ollama at {base_url} after {attempt + 1} attempt(s): {e}"
+                )
+            raise
+
+    # All retries exhausted
+    raise OllamaConnectionError(
+        f"Ollama at {base_url} timed out after {max_retries} attempt(s): {last_exc}"
+    )

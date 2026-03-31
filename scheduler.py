@@ -45,6 +45,7 @@ class ResearchOutcome:
     had_conflicts: bool = False
     elapsed_s: float = 0.0
     error: str = ""
+    triggered_synthesis: bool = False  # True if this child's completion queued parent synthesis
 
 
 @dataclass
@@ -158,12 +159,17 @@ def _worker(
             if tool_name == "fetch_page":
                 url = tool_call.get("url", "")
                 if url:
-                    memory.record_source(url, topic_slug=note.slug)
-                    outcome.sources_found += 1
-                    if any(x in tool_result for x in ("Failed", "Timed out", "HTTP error")):
+                    fetch_failed = any(x in tool_result for x in (
+                        "Failed to fetch", "Timed out", "HTTP error", "Invalid URL",
+                        "timed out after", "Failed:", "Error:",
+                    ))
+                    if fetch_failed:
                         _p(f"  ! fetch failed: {tool_result[:80]}")
                         log.warn("source_fetch_failed", url=url, topic=note.slug)
                     else:
+                        # Only record sources that actually returned content
+                        memory.record_source(url, topic_slug=note.slug)
+                        outcome.sources_found += 1
                         _p(f"  ✓ fetched {len(tool_result)} chars")
                         log.tool_result(tool_name, elapsed_ms, topic_slug=note.slug, url=url)
                 else:
@@ -231,6 +237,12 @@ def _worker(
             log.topic_done(note, outcome.elapsed_s, outcome.sources_found,
                            outcome.memories_saved, outcome.iterations)
             outcome.success = True
+
+            # Notify parent tree node that a child has finished
+            if note.parent_slug:
+                syn_result = topics.on_child_completed(note.parent_slug)
+                _p(f"→ parent '{note.parent_slug}': {syn_result}")
+                outcome.triggered_synthesis = (syn_result == "synthesizing")
         else:
             outcome.error = "Note not found after research (update_note may not have been called)"
             log.topic_failed(note, outcome.error)
@@ -246,6 +258,136 @@ def _worker(
     finally:
         memory.close()
 
+    return outcome
+
+
+# ── Synthesis worker ─────────────────────────────────────────────────────────
+
+def _synthesis_worker(
+    parent_note,
+    vault: VaultManager,
+    roster,
+    db_path: str,
+    print_lock: threading.Lock,
+    log,
+) -> ResearchOutcome:
+    """
+    Roll-up worker: reads all children, calls LLM to synthesise a master summary,
+    writes the parent note, marks it 'complete'.
+    """
+    outcome = ResearchOutcome(slug=parent_note.slug, name=parent_note.name, success=False)
+    memory = MemoryStore(db_path)
+    topics = TopicManager(vault)
+    t_start = time.time()
+
+    def _p(msg: str):
+        with print_lock:
+            try:
+                print(f"       {msg}", flush=True)
+            except OSError:
+                print(f"       {msg.encode('ascii', errors='replace').decode()}", flush=True)
+
+    try:
+        _p(f"synthesising {len(parent_note.children_slugs)} children for '{parent_note.name}'")
+
+        # Load all child notes
+        children = []
+        for slug in parent_note.children_slugs:
+            child = vault.read_note(slug)
+            if child:
+                children.append(child)
+        if not children:
+            outcome.error = "No child notes found — synthesis skipped"
+            _p(f"! {outcome.error}")
+            # Revert to waiting so it can be retried
+            stuck = vault.read_note(parent_note.slug)
+            if stuck:
+                stuck.status = "waiting_on_children"
+                vault.write_note(stuck)
+            return outcome
+
+        from planner import build_synthesis_prompt
+        synthesis_prompt = build_synthesis_prompt(parent_note, children)
+
+        model = roster.get_model_for(parent_note) if roster else cfg.get("ollama.model")
+        _p(f"model: {model} | {len(children)} children loaded")
+
+        from llm import chat
+        messages = [{"role": "user", "content": synthesis_prompt}]
+        from prompts import build_system_prompt, parse_tool_call
+        from tools import TOOL_REGISTRY_SYNTHESIS_ONLY, format_tools_for_prompt
+
+        # Build a synthesis-specific system prompt that only exposes read_local_vault
+        synthesis_tools_text = "\n".join(
+            f"### {t['name']}\n{t['description']}\nExample: `{t['example']}`"
+            for t in TOOL_REGISTRY_SYNTHESIS_ONLY
+        )
+        system_prompt = (
+            "You are a research synthesis assistant. You have already been provided with "
+            "the sub-topic research below. Write a comprehensive, integrated master note "
+            "for the parent topic. You may call read_local_vault to load additional vault notes "
+            "if you need more detail.\n\n"
+            f"## Available tool\n{synthesis_tools_text}\n\n"
+            "Output the final note body as plain markdown starting with # TopicName."
+        )
+
+        max_iter = min(cfg.get("agent.max_iterations", 8), 4)
+        final_body = ""
+
+        for iteration in range(max_iter):
+            _p(f"synthesis iteration {iteration + 1}/{max_iter}")
+            response = chat(messages, system_prompt, stream=False, model=model)
+            tool_call = parse_tool_call(response)
+
+            if tool_call is None:
+                # Model returned the synthesis — capture it
+                final_body = response.strip()
+                break
+
+            if tool_call.get("tool") == "read_local_vault":
+                _p(f"→ read_local_vault: {tool_call.get('slugs', '')}")
+                tool_result = execute_tool(tool_call, memory, vault=vault, topics=topics)
+                messages = messages + [
+                    {"role": "assistant", "content": response},
+                    {"role": "user", "content": f"[Vault content]\n{tool_result}\n\nNow write the synthesis."},
+                ]
+            else:
+                # Unexpected tool — just continue
+                messages = messages + [
+                    {"role": "assistant", "content": response},
+                    {"role": "user", "content": "Continue — write the synthesis now."},
+                ]
+
+        if not final_body:
+            outcome.error = "Synthesis produced no output"
+            _p(f"! {outcome.error}")
+            return outcome
+
+        # Write the updated parent note
+        parent = vault.read_note(parent_note.slug)
+        if parent:
+            parent.body = final_body
+            parent.status = "complete"
+            parent.last_researched = str(date.today())
+            parent.research_runs += 1
+            parent.last_run_elapsed_s = round(time.time() - t_start, 1)
+            vault.write_note(parent)
+            outcome.words_written = len(final_body.split())
+            outcome.success = True
+            _p(f"✓ synthesis complete — {outcome.words_written} words")
+            log.note_written(parent_note.slug, 0)
+
+        memory.close()
+
+    except Exception as e:
+        import traceback as _tb
+        outcome.error = str(e)
+        outcome.elapsed_s = time.time() - t_start
+        _p(f"! synthesis error: {e}")
+        log.topic_failed(parent_note, str(e), _tb.format_exc())
+        memory.close()
+
+    outcome.elapsed_s = time.time() - t_start
     return outcome
 
 
@@ -341,6 +483,32 @@ class ResearchScheduler:
                     else:
                         result.topics_failed += 1
                         print(f"       ── FAILED: {outcome.error}", flush=True)
+
+        # ── Synthesis pass: pick up any parents that are ready to synthesise ──
+        synthesis_candidates = self.topics.get_synthesis_candidates()
+        if synthesis_candidates:
+            print(f"\n  Synthesis pass: {len(synthesis_candidates)} parent(s) ready for roll-up", flush=True)
+            syn_futures = {}
+            with ThreadPoolExecutor(max_workers=1) as syn_pool:
+                for syn_note in synthesis_candidates:
+                    print(f"  [SYN] {syn_note.name}", flush=True)
+                    f = syn_pool.submit(
+                        _synthesis_worker, syn_note, self.vault, self.roster,
+                        db_path, print_lock, self.log,
+                    )
+                    syn_futures[f] = syn_note
+                for f in as_completed(syn_futures):
+                    syn_note = syn_futures[f]
+                    try:
+                        syn_outcome = f.result()
+                        result.outcomes.append(syn_outcome)
+                        result.topics_attempted += 1
+                        if syn_outcome.success:
+                            result.topics_succeeded += 1
+                        else:
+                            result.topics_failed += 1
+                    except Exception as e:
+                        print(f"  [SYN] FAILED {syn_note.name}: {e}", flush=True)
 
         print(f"\nRebuilding backlinks...", flush=True)
         self.vault.rebuild_backlinks()

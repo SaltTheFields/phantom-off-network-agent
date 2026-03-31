@@ -54,7 +54,7 @@ This is a research tool for people who want to think deeply about topics over ti
 | **Conflict Detection** | New findings that contradict existing notes get flagged |
 | **Source Registry** | Every URL fetched is tracked with domain and fetch count |
 | **Article Cache** | Fetched pages cached in SQLite with timestamps and change-detection diffs |
-| **Source Credibility** | Every URL scored by domain tier (academic → gov → quality-news → general) |
+| **Source Credibility** | Every URL scored across 5 tiers: academic/gov → authoritative-ref (Wikipedia, MDN, official docs) → technical (GitHub, StackOverflow) → general → social |
 | **Research Templates** | Type-specific prompts: person / tech / event / concept / research |
 | **Static Context** | User-editable `context.md` injected into every LLM prompt |
 | **Interactive Graph** | Force-directed canvas graph — zoom, pan, drag nodes, click to inspect, dbl-click to open |
@@ -62,6 +62,12 @@ This is a research tool for people who want to think deeply about topics over ti
 | **Semantic Memory** | Sentence-embeddings for hybrid FTS + cosine-similarity memory search |
 | **Consensus Mode** | Two-model research + reconciler pass for high-depth topics (opt-in) |
 | **Dynamic Dashboard** | Modern Web UI with auto-tailing logs, live research progress, and archived topic toggle |
+| **RSS Feed Monitoring** | Per-topic RSS/Atom feeds — new items injected as context at research time; check live from the note page |
+| **Dead Link Scanner** | Background HEAD-checks all sources; dead links flagged with badges on the sources page |
+| **Knowledge Gaps** | `/gaps` page surfaces unresearched topics, orphan notes, frontier nodes, stalled trees, and tag coverage holes |
+| **Nested Research Trees** | Decompose any topic into a tree of sub-topics — LLM plans children, leaf-first research, automatic synthesis roll-up |
+| **Toast Notifications** | Every action (save, archive, research, plan) shows a dismissing toast — no more silent redirects |
+| **LLM Retry on Timeout** | Ollama timeouts are automatically retried with back-off before failing a topic |
 
 ---
 
@@ -299,6 +305,30 @@ Create 2 new topics? [y/N]: y
 
 Done. Created: 2 | Skipped: 1 | Errors: 0
 ```
+
+---
+
+## Nested Research Trees
+
+Any topic can be decomposed into a tree of focused sub-topics. Click **🌿 Plan Tree** on any note's detail page and the LLM will:
+
+1. **Plan** — generate 3–5 child sub-topic names scoped from the parent
+2. **Research** — each child is queued and researched leaf-first (children before parents)
+3. **Synthesise** — when all children are done, one worker claims the parent and writes a master summary integrating all findings with `[[WikiLinks]]` back to each child
+
+```
+Magic (waiting_on_children)
+├── Sleight of Hand Mechanics     ← researched
+├── Misdirection Theory           ← researched
+├── Stage vs Close-Up Traditions  ← queued
+└── Historical Origins            ← queued
+```
+
+Cross-pollination is automatic: if two parent topics generate a child with the same slug (e.g. both reference "Misdirection"), only one note is created and both parents link to it.
+
+Tree status values: `planning` → `waiting_on_children` → `synthesizing` → `complete`
+
+The `/gaps` page shows a **Stalled Trees** section for any parent stuck in `waiting_on_children` with no children actively running.
 
 ---
 

@@ -19,72 +19,141 @@ def _scheme_variants(url: str) -> list[str]:
 # Returns (score 1-5, tier label)
 # 1 = highest credibility, 5 = lowest
 
-_ACADEMIC_DOMAINS = {
+# Tier 1 — Academic: exact full-domain suffixes checked with endswith()
+_ACADEMIC_SUFFIXES = {
     ".edu", ".ac.uk", ".ac.au", ".ac.nz", ".ac.in", ".ac.jp",
-    ".edu.au", ".edu.cn", ".uni-", "arxiv.org", "pubmed.ncbi.nlm.nih.gov",
-    "scholar.google", "jstor.org", "researchgate.net", "semanticscholar.org",
+    ".edu.au", ".edu.cn",
+}
+# Tier 1 — Academic: exact domain or subdomain matches
+_ACADEMIC_EXACT = {
+    "arxiv.org", "pubmed.ncbi.nlm.nih.gov", "scholar.google.com",
+    "jstor.org", "researchgate.net", "semanticscholar.org",
     "ncbi.nlm.nih.gov", "nature.com", "sciencedirect.com", "springer.com",
     "ieee.org", "acm.org", "biorxiv.org", "medrxiv.org",
+    "plos.org", "plosone.org", "nih.gov", "who.int",
 }
 
-_GOV_DOMAINS = {".gov", ".gov.uk", ".gov.au", ".gov.ca", ".mil"}
+_GOV_SUFFIXES = {".gov", ".gov.uk", ".gov.au", ".gov.ca", ".gov.nz", ".mil"}
 
+# Tier 2 — Quality journalism & reference
 _QUALITY_NEWS = {
     "reuters.com", "apnews.com", "bbc.com", "bbc.co.uk", "npr.org",
     "theguardian.com", "nytimes.com", "wsj.com", "ft.com", "economist.com",
     "scientificamerican.com", "newscientist.com", "arstechnica.com",
     "wired.com", "technologyreview.com", "theatlantic.com",
+    "propublica.org", "foreignpolicy.com", "foreignaffairs.com",
+}
+# Tier 2 — Authoritative reference (Wikipedia, official docs, standards bodies)
+_AUTHORITATIVE_REFERENCE = {
+    "wikipedia.org", "en.wikipedia.org",
+    "developer.mozilla.org",  # MDN — de facto web standard reference
+    "w3.org",                 # W3C specs
+    "ietf.org",               # Internet standards
+    "unicode.org",
+    "python.org",             # official language docs
+    "docs.python.org",
+    "rust-lang.org",
+    "go.dev",
+    "openjdk.org",
+    "php.net",
+    "ruby-lang.org",
 }
 
-_ORG_DOMAINS = {".org"}
+# Tier 3 — Useful technical sources (community/code, not peer-reviewed)
+_TECHNICAL_COMMUNITY = {
+    "github.com", "gitlab.com",
+    "stackoverflow.com", "stackexchange.com", "superuser.com",
+    "serverfault.com",
+    "docs.microsoft.com", "learn.microsoft.com",
+    "cloud.google.com", "aws.amazon.com", "docs.aws.amazon.com",
+    "kubernetes.io", "docker.com", "hub.docker.com",
+    "pypi.org", "npmjs.com", "crates.io",
+    "readthedocs.io", "readthedocs.org",
+    "archive.org",            # Wayback Machine / Internet Archive
+}
 
 _LOW_QUALITY = {
     "reddit.com", "quora.com", "yahoo.com", "buzzfeed.com",
     "huffpost.com", "medium.com", "substack.com",
+    "towardsdatascience.com", "hackernoon.com", "dev.to",
 }
 
 _SOCIAL_MEDIA = {
     "twitter.com", "x.com", "facebook.com", "instagram.com",
-    "tiktok.com", "linkedin.com", "pinterest.com",
+    "tiktok.com", "linkedin.com", "pinterest.com", "youtube.com",
+    "twitch.tv",
 }
+
+
+def _strip_www(domain: str) -> str:
+    """Remove leading 'www.' prefix — uses removeprefix, not lstrip (which strips a char set)."""
+    return domain.removeprefix("www.")
 
 
 def score_domain(url: str) -> tuple[int, str]:
     """
     Score a URL's source credibility.
     Returns (score, label) where score 1=highest, 5=lowest.
+
+    Tier 1 = academic / government
+    Tier 2 = quality journalism / authoritative reference (Wikipedia, official docs)
+    Tier 3 = useful technical community (GitHub, StackOverflow, cloud docs)
+    Tier 4 = low-quality aggregators / blog platforms
+    Tier 5 = social media
     """
+    if not url or not url.startswith(("http://", "https://")):
+        return 5, "invalid"
+
     try:
         parsed = urlparse(url)
-        domain = parsed.netloc.lower().lstrip("www.")
+        raw_netloc = parsed.netloc.lower()
+        if not raw_netloc:
+            return 5, "invalid"
+        domain = _strip_www(raw_netloc)
     except Exception:
-        return 3, "unknown"
+        return 5, "invalid"
 
-    # Tier 1: academic / government
-    for pat in _ACADEMIC_DOMAINS:
-        if pat in domain:
+    # Tier 1: academic suffixes (.edu, .ac.uk …)
+    for suffix in _ACADEMIC_SUFFIXES:
+        if domain == suffix.lstrip(".") or domain.endswith(suffix):
             return 1, "academic"
-    for pat in _GOV_DOMAINS:
-        if domain.endswith(pat):
+
+    # Tier 1: exact academic domains and subdomains
+    for pat in _ACADEMIC_EXACT:
+        if domain == pat or domain.endswith("." + pat):
+            return 1, "academic"
+
+    # Tier 1: government TLDs
+    for suffix in _GOV_SUFFIXES:
+        if domain.endswith(suffix):
             return 1, "government"
 
-    # Tier 2: quality journalism
+    # Tier 2: quality news (exact domain match only)
     if domain in _QUALITY_NEWS:
         return 2, "quality-news"
 
-    # Tier 3: .org and general reference
+    # Tier 2: authoritative reference — Wikipedia, official language/standards docs
+    for pat in _AUTHORITATIVE_REFERENCE:
+        if domain == pat or domain.endswith("." + pat):
+            return 2, "authoritative-ref"
+
+    # Tier 3: technical community — GitHub, StackOverflow, cloud docs, package registries
+    if domain in _TECHNICAL_COMMUNITY or any(domain.endswith("." + d) for d in _TECHNICAL_COMMUNITY):
+        return 3, "technical"
+
+    # Tier 3: other .org (general non-profit/org)
     if domain.endswith(".org"):
         return 3, "organization"
-    if "wikipedia.org" in domain:
-        return 3, "wikipedia"
 
-    # Tier 4: social / aggregator / blogs
+    # Tier 4: low-quality aggregators / blog platforms
     if domain in _LOW_QUALITY:
         return 4, "aggregator"
+
+    # Tier 5: social media
     if domain in _SOCIAL_MEDIA:
         return 5, "social-media"
 
-    # Default: general web
+    # Default: unrecognised general web
     return 3, "general-web"
 
 
@@ -105,6 +174,21 @@ def _retry(fn, max_retries: int = 3, base_delay: float = 1.0, exceptions=(Except
             if attempt < max_retries - 1:
                 time.sleep(base_delay * (2 ** attempt))
     raise last_exc
+
+TOOL_REGISTRY_SYNTHESIS_ONLY = [
+    {
+        "name": "read_local_vault",
+        "description": (
+            "Read one or more notes from the local research vault by slug. "
+            "Use during synthesis to load child notes before writing the parent summary. "
+            "Pass a comma-separated list of slugs."
+        ),
+        "parameters": {
+            "slugs": "string — comma-separated note slugs to read (e.g. 'python-asyncio,rust-tokio')",
+        },
+        "example": '{"tool": "read_local_vault", "slugs": "python-asyncio,rust-tokio"}',
+    },
+]
 
 TOOL_REGISTRY = [
     {
@@ -401,11 +485,15 @@ def execute_tool(tool_call: dict, memory_store, vault=None, topics=None) -> str:
                         pass
                 note.body = body
 
-            # Record sources with credibility score
+            # Record sources with credibility score — skip invalid/schemeless URLs
             source_str = tool_call.get("sources", "")
             if source_str and memory_store:
                 for url in [u.strip() for u in source_str.split(",") if u.strip()]:
-                    cred_score, _ = score_domain(url)
+                    if not url.startswith(("http://", "https://")):
+                        continue  # reject hallucinated or schemeless URLs
+                    cred_score, cred_tier = score_domain(url)
+                    if cred_tier == "invalid":
+                        continue  # reject invalid/empty domains
                     memory_store.record_source(url, topic_slug=note.slug, reliability=cred_score)
 
             vault.write_note(note)
@@ -434,8 +522,25 @@ def execute_tool(tool_call: dict, memory_store, vault=None, topics=None) -> str:
             queued_msg = f" | auto-queued: {', '.join(auto_queued)}" if auto_queued else ""
             return f"Note updated: {note.name} ({note.slug}.md){queued_msg}"
 
+        elif name == "read_local_vault":
+            if vault is None:
+                return "Vault not available in this mode."
+            slugs_raw = tool_call.get("slugs", "")
+            if not slugs_raw:
+                return "Error: read_local_vault requires a 'slugs' parameter"
+            slug_list = [s.strip() for s in slugs_raw.split(",") if s.strip()]
+            parts = []
+            for slug in slug_list:
+                note = vault.read_note(slug)
+                if note is None:
+                    parts.append(f"[Note not found: {slug}]")
+                else:
+                    header = f"[Note: {note.name} | depth:{note.tree_depth} | researched:{note.last_researched or 'never'}]"
+                    parts.append(f"{header}\n\n{note.body[:3000]}")
+            return "\n\n---\n\n".join(parts) if parts else "No notes found."
+
         else:
-            available = "web_search, fetch_page, remember, recall, read_note, update_note"
+            available = "web_search, fetch_page, remember, recall, read_note, update_note, read_local_vault"
             return f"Unknown tool: '{name}'. Available: {available}"
 
     except Exception as e:

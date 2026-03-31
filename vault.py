@@ -28,6 +28,12 @@ class Note:
     last_run_elapsed_s: float = 0
     last_run_iterations: int = 0
     consensus_models: list = field(default_factory=list)  # specific models for this topic
+    # ── Tree architecture fields ───────────────────────────────────────────────
+    parent_slug: str = ""           # empty = root node
+    tree_depth: int = 0             # 0 = root, 1 = first-level child, etc.
+    child_count: int = 0            # how many children were planned
+    children_done: int = 0         # how many children have completed research
+    children_slugs: list = field(default_factory=list)  # ordered child slug list
 
 
 # ── Frontmatter parser (no PyYAML) ────────────────────────────────────────────
@@ -142,6 +148,12 @@ class VaultManager:
             last_run_elapsed_s=float(meta.get("last_run_elapsed_s", 0)),
             last_run_iterations=int(meta.get("last_run_iterations", 0)),
             consensus_models=meta.get("consensus_models", []),
+            # Tree fields — lazy defaults so existing flat notes work unchanged
+            parent_slug=meta.get("parent_slug", ""),
+            tree_depth=int(meta.get("tree_depth", 0)),
+            child_count=int(meta.get("child_count", 0)),
+            children_done=int(meta.get("children_done", 0)),
+            children_slugs=meta.get("children_slugs", []),
         )
         return note
 
@@ -168,6 +180,12 @@ class VaultManager:
             "total_memories_saved": note.total_memories_saved,
             "last_run_elapsed_s": note.last_run_elapsed_s,
             "last_run_iterations": note.last_run_iterations,
+            # Tree architecture
+            "parent_slug": note.parent_slug,
+            "tree_depth": note.tree_depth,
+            "child_count": note.child_count,
+            "children_done": note.children_done,
+            "children_slugs": note.children_slugs,
         }
         body = note.body
         footer = f"\n---\n*Last researched: {note.last_researched or 'never'} | Refresh interval: {note.refresh_interval_days} days*\n"
@@ -306,6 +324,36 @@ class VaultManager:
             index_path = os.path.join(self.vault_dir, "_index.md")
             with open(index_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(lines))
+
+    # ── Tree helpers ──────────────────────────────────────────────────────────
+
+    def atomic_increment_children_done(self, parent_slug: str) -> tuple[int, int]:
+        """
+        Thread-safe: read parent note, increment children_done, write back.
+        Returns (new_children_done, child_count).
+        Used by workers when a child topic finishes research.
+        """
+        with self._lock:
+            note = self.read_note(parent_slug)
+            if note is None:
+                return 0, 0
+            note.children_done = min(note.children_done + 1, note.child_count)
+            self.write_note(note)
+            return note.children_done, note.child_count
+
+    def atomic_claim_synthesis(self, parent_slug: str) -> bool:
+        """
+        Attempt to atomically transition parent from 'waiting_on_children' → 'synthesizing'.
+        Returns True if this caller won the claim, False if already claimed or wrong state.
+        Prevents two workers from both starting synthesis on the same parent.
+        """
+        with self._lock:
+            note = self.read_note(parent_slug)
+            if note is None or note.status != "waiting_on_children":
+                return False
+            note.status = "synthesizing"
+            self.write_note(note)
+            return True
 
     # ── Conflict detection ────────────────────────────────────────────────────
 

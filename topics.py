@@ -7,7 +7,16 @@ from vault import VaultManager, Note
 from config import cfg
 
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
-VALID_STATUSES = ("queued", "active", "archived")
+VALID_STATUSES = (
+    "queued",             # pending research
+    "active",             # researched at least once
+    "archived",           # user-archived, skip
+    # ── Tree statuses ──────────────────────────────────────────────────────
+    "planning",           # LLM decomposing into children (transient)
+    "waiting_on_children",# parent waiting for all children to finish
+    "synthesizing",       # claimed by exactly one worker for roll-up
+    "complete",           # synthesis done — final state for tree roots
+)
 VALID_TYPES = ("research", "person", "tech", "event", "concept")
 VALID_PRIORITIES = ("high", "medium", "low")
 
@@ -137,17 +146,103 @@ class TopicManager:
         return stale
 
     def get_research_candidates(self) -> list[Note]:
-        """Combined queue: queued topics + stale active topics, deduplicated, priority-sorted."""
+        """
+        Leaf-first candidates: queued + stale active notes, excluding nodes that
+        are waiting, synthesizing, planning, or complete (tree-internal states).
+        Pure leaf nodes (child_count == 0) are promoted to the front.
+        """
+        _SKIP_STATUSES = {"waiting_on_children", "synthesizing", "planning", "complete", "archived"}
         queued = self.list_topics(status="queued")
         stale = self.get_stale_topics()
-        seen = set()
+        seen: set[str] = set()
         combined = []
         for note in queued + stale:
-            if note.slug not in seen:
+            if note.slug not in seen and note.status not in _SKIP_STATUSES:
                 combined.append(note)
                 seen.add(note.slug)
-        combined.sort(key=lambda n: (PRIORITY_ORDER.get(n.priority, 1), n.created))
+        # Leaf nodes first (child_count == 0), then sort by priority
+        combined.sort(key=lambda n: (
+            1 if n.child_count > 0 else 0,       # 0 = leaf, 1 = non-leaf
+            PRIORITY_ORDER.get(n.priority, 1),
+            n.created,
+        ))
         return combined
+
+    # ── Tree management ───────────────────────────────────────────────────────
+
+    def create_child_topic(
+        self,
+        parent_slug: str,
+        child_name: str,
+        type: str = "research",
+        priority: str = "medium",
+        tags: list[str] = None,
+    ) -> Note:
+        """
+        Create a child topic linked to a parent.
+        If the slug already exists (cross-pollination), return the existing note
+        and add the parent_slug link if it's currently a root (tree_depth==0).
+        Does NOT update the parent's children_slugs — caller (planner) handles that.
+        """
+        child_slug = self.vault.name_to_slug(child_name)
+
+        # Cross-pollination: same sub-topic referenced by two parents
+        if self.vault.note_exists(child_slug):
+            existing = self.vault.read_note(child_slug)
+            if existing:
+                return existing
+
+        parent = self.vault.read_note(parent_slug)
+        parent_depth = parent.tree_depth if parent else 0
+        interval = cfg.get("vault.default_refresh_interval_days", 7)
+
+        note = Note(
+            slug=child_slug,
+            name=child_name,
+            type=type if type in VALID_TYPES else "research",
+            status="queued",
+            priority=priority if priority in VALID_PRIORITIES else "medium",
+            tags=tags or (parent.tags if parent else []),
+            created=str(date.today()),
+            refresh_interval_days=int(interval),
+            body=f"# {child_name}\n\n*Not yet researched.*\n",
+            parent_slug=parent_slug,
+            tree_depth=parent_depth + 1,
+        )
+        self.vault.write_note(note)
+        return note
+
+    def on_child_completed(self, parent_slug: str) -> str:
+        """
+        Called after a child finishes research.
+        Atomically increments children_done on the parent.
+        If all children are done, tries to claim synthesis:
+          - Transitions parent to 'synthesizing' if the claim succeeds.
+          - Returns 'synthesizing' if this caller won, 'waiting' otherwise.
+        Returns 'not_ready' if children still pending, 'no_parent' if parent missing.
+        """
+        if not parent_slug:
+            return "no_parent"
+        done, total = self.vault.atomic_increment_children_done(parent_slug)
+        if total == 0 or done < total:
+            return "not_ready"
+        # All children done — race to claim synthesis
+        claimed = self.vault.atomic_claim_synthesis(parent_slug)
+        return "synthesizing" if claimed else "waiting"
+
+    def get_synthesis_candidates(self) -> list[Note]:
+        """Return notes with status='synthesizing' — ready for roll-up worker."""
+        return self.list_topics(status="synthesizing")
+
+    def mark_complete(self, slug: str, last_researched: str = None) -> bool:
+        """Mark a tree root as complete after synthesis."""
+        note = self.vault.read_note(slug)
+        if not note:
+            return False
+        note.status = "complete"
+        note.last_researched = last_researched or str(date.today())
+        self.vault.write_note(note)
+        return True
 
     # ── Display ───────────────────────────────────────────────────────────────
 
@@ -250,7 +345,8 @@ class TopicManager:
         Combines queued + active (stale or not) — every topic is always eligible
         in loop mode. Sort key: (depth ASC, priority weight ASC).
         """
-        all_notes = [n for n in self.list_topics() if n.status != "archived"]
+        _SKIP = {"archived", "waiting_on_children", "synthesizing", "planning", "complete"}
+        all_notes = [n for n in self.list_topics() if n.status not in _SKIP]
         all_notes.sort(key=lambda n: (
             n.research_depth,
             PRIORITY_ORDER.get(n.priority, 1),

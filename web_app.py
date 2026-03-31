@@ -1804,6 +1804,34 @@ def vault_note(slug: str):
         for l in note.forward_links
     ) or "<span style='color:#777'>none</span>"
 
+    # ── Tree info ──────────────────────────────────────────────────────────────
+    tree_meta = ""
+    if note.parent_slug:
+        parent_note = _vault.read_note(note.parent_slug)
+        parent_name = parent_note.name if parent_note else note.parent_slug
+        tree_meta += (
+            f'<div><span class="lbl">Parent</span> '
+            f'<a href="/vault/{_html.escape(note.parent_slug)}">{_html.escape(parent_name)}</a></div>'
+            f'<div><span class="lbl">Tree Depth</span> <span style="color:var(--accent)">{note.tree_depth}</span></div>'
+        )
+    if note.child_count > 0:
+        children_html = ""
+        for cs in note.children_slugs:
+            cn = _vault.read_note(cs)
+            clabel = cn.name if cn else cs
+            cstatus = cn.status if cn else "?"
+            cbadge = _badge(cstatus)
+            children_html += f'<a href="/vault/{_html.escape(cs)}">{_html.escape(clabel)}</a> {cbadge} &nbsp; '
+        progress_pct = int((note.children_done / note.child_count) * 100) if note.child_count else 0
+        tree_meta += (
+            f'<div style="grid-column:1/-1"><span class="lbl">Children</span> '
+            f'<span style="color:var(--accent)">{note.children_done}/{note.child_count}</span> done &nbsp;'
+            f'<span style="display:inline-block;width:80px;height:6px;background:#1c1c1c;border-radius:3px;vertical-align:middle">'
+            f'<span style="display:block;width:{progress_pct}%;height:100%;background:var(--accent);border-radius:3px"></span></span>'
+            f'</div>'
+            f'<div style="grid-column:1/-1"><span class="lbl">Sub-topics</span> {children_html}</div>'
+        )
+
     meta = (
         '<div class="meta-grid">'
         f'<div><span class="lbl">Status</span> {_badge(note.status)}</div>'
@@ -1814,6 +1842,7 @@ def vault_note(slug: str):
         f'<div><span class="lbl">Depth</span> {_depth_bar(note.research_depth)}</div>'
         f'<div><span class="lbl">Runs</span> <span style="color:var(--accent)">{note.research_runs}</span></div>'
         f'<div><span class="lbl">Sources</span> <span style="color:var(--accent)">{note.total_sources_fetched}</span></div>'
+        + tree_meta +
         f'<div style="grid-column:1/-1"><span class="lbl">Tags</span> {tags}</div>'
         f'<div style="grid-column:1/-1"><span class="lbl">Links to</span> {fwd}</div>'
         + (
@@ -1825,10 +1854,18 @@ def vault_note(slug: str):
         )
         + '</div>'
     )
+    # Show Plan button only for root topics not yet planned
+    plan_btn = ""
+    if not note.parent_slug and note.child_count == 0 and note.status not in ("planning", "waiting_on_children", "synthesizing", "complete", "archived"):
+        plan_btn = (
+            f'<form method="post" action="/topics/{note.slug}/plan">'
+            f'<button class="btn-dim" style="border-color:#446;color:#aaf" title="Decompose into sub-topics">🌿 Plan Tree</button></form>'
+        )
     actions = (
         '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'
         f'<form method="post" action="/topics/{note.slug}/research">'
         f'<button class="btn-green">▶ Research Now</button></form>'
+        + plan_btn +
         f'<a href="/vault/{note.slug}/edit"><button>✎ Edit Note</button></a>'
         f'<a href="/vault/{note.slug}/history"><button class="btn-dim">⏱ History</button></a>'
         f'<form method="post" action="/topics/{note.slug}/queue"><button>↺ Requeue</button></form>'
@@ -1929,7 +1966,7 @@ def vault_note_edit(slug: str):
     def _opt(val, current):
         return f'<option value="{val}" {"selected" if val==current else ""}>{val}</option>'
 
-    status_opts = "".join(_opt(s, note.status) for s in ["queued", "active", "archived"])
+    status_opts = "".join(_opt(s, note.status) for s in ["queued", "active", "archived", "planning", "waiting_on_children", "synthesizing", "complete"])
     prio_opts   = "".join(_opt(p, note.priority) for p in ["high", "medium", "low"])
     type_opts   = "".join(_opt(t, note.type) for t in ["research", "tech", "person", "event", "concept"])
 
@@ -2059,6 +2096,33 @@ def queue_topic(slug: str):
 def archive_topic_route(slug: str):
     _topics.archive_topic(slug)
     return RedirectResponse("/topics?msg=Topic+archived", status_code=303)
+
+
+@app.post("/topics/{slug}/plan")
+def plan_topic_route(slug: str):
+    """Decompose a root topic into a nested research tree of child sub-topics."""
+    import threading
+    note = _vault.read_note(slug)
+    if not note:
+        return RedirectResponse(f"/vault/{slug}?msg=Error:+note+not+found", status_code=303)
+    if note.child_count > 0 or note.status in ("planning", "waiting_on_children", "synthesizing", "complete"):
+        return RedirectResponse(f"/vault/{slug}?msg=Already+planned", status_code=303)
+
+    def _run_planner():
+        try:
+            from planner import decompose_topic
+            from agents import AgentRoster
+            roster = AgentRoster()
+            decompose_topic(note, _vault, _topics, roster=roster)
+            _vault.rebuild_index()
+            _vault.rebuild_backlinks()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"plan_topic_route background error: {e}")
+
+    t = threading.Thread(target=_run_planner, daemon=True)
+    t.start()
+    return RedirectResponse(f"/vault/{slug}?msg=Planning+tree…+sub-topics+will+appear+shortly", status_code=303)
 
 
 # ── Memory ─────────────────────────────────────────────────────────────────────
@@ -2507,11 +2571,43 @@ def gaps_page():
             parts.append(f'<span style="background:#0d1a22;color:{col};padding:3px 9px;border-radius:12px;font-size:11px;border:1px solid {col}33">{_html.escape(t)} <span style="opacity:0.5">×{c}</span></span>')
         return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">' + "".join(parts) + '</div>'
 
+    # ── 5. Stalled research trees (waiting_on_children with no queued children left) ──
+    stalled_trees = []
+    for n in notes:
+        if n.status == "waiting_on_children":
+            queued_children = sum(
+                1 for cs in (n.children_slugs or [])
+                if (cn := _vault.read_note(cs)) and cn.status in ("queued", "active", "planning")
+            )
+            stalled_trees.append({"note": n, "queued": queued_children})
+
+    def _stalled_rows():
+        if not stalled_trees:
+            return '<div class="empty" style="padding:20px">No stalled trees.</div>'
+        rows = []
+        for item in stalled_trees:
+            n = item["note"]
+            progress_pct = int((n.children_done / n.child_count) * 100) if n.child_count else 0
+            bar = (
+                f'<span style="display:inline-block;width:60px;height:6px;background:#1c1c1c;border-radius:3px;vertical-align:middle">'
+                f'<span style="display:block;width:{progress_pct}%;height:100%;background:var(--accent);border-radius:3px"></span></span>'
+            )
+            rows.append(
+                f'<tr>'
+                f'<td><a href="/vault/{n.slug}" style="color:#ccc">{_html.escape(n.name)}</a></td>'
+                f'<td style="color:var(--accent)">{n.children_done}/{n.child_count} {bar}</td>'
+                f'<td style="color:#888;font-size:11px">{item["queued"]} still running</td>'
+                f'<td>{_badge(n.status)}</td>'
+                f'</tr>'
+            )
+        return '<div class="table-wrap"><table><thead><tr><th>Parent Topic</th><th>Progress</th><th>Children Active</th><th>Status</th></tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>'
+
     stats_html = (
         '<div class="stats">'
         f'<div class="stat-card"><div class="stat-num" style="color:#ff6b6b">{len(never_run)}</div><div class="stat-lbl">Unresearched</div></div>'
         f'<div class="stat-card"><div class="stat-num" style="color:#ffd93d">{len(orphans)}</div><div class="stat-lbl">Orphans</div></div>'
         f'<div class="stat-card"><div class="stat-num" style="color:#446677">{len(frontier)}</div><div class="stat-lbl">Frontier</div></div>'
+        f'<div class="stat-card"><div class="stat-num" style="color:#aaf">{len(stalled_trees)}</div><div class="stat-lbl">Stalled Trees</div></div>'
         f'<div class="stat-card"><div class="stat-num" style="color:#999">{len(singleton_tags)}</div><div class="stat-lbl">Singleton Tags</div></div>'
         f'<div class="stat-card"><div class="stat-num">{len(notes)}</div><div class="stat-lbl">Total Notes</div></div>'
         '</div>'
@@ -2526,6 +2622,8 @@ def gaps_page():
         + _orphan_rows()
         + '<h2 style="margin-top:28px">Frontier Nodes <span style="color:#777;font-size:12px">— referenced but not created</span></h2>'
         + _frontier_rows()
+        + '<h2 style="margin-top:28px">Stalled Research Trees <span style="color:#777;font-size:12px">— waiting on children</span></h2>'
+        + _stalled_rows()
         + '<h2 style="margin-top:28px">Tag Coverage</h2>'
         + _tag_html()
     )
