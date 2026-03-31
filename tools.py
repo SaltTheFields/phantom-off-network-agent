@@ -348,7 +348,7 @@ def execute_tool(tool_call: dict, memory_store, vault=None, topics=None) -> str:
                 return f"No memories found matching: {query}"
             lines = [f"Memory search results for '{query}':"]
             for r in results:
-                date = r["created_at"][:10] if r["created_at"] else "?"
+                date = r["created_at"][:16] if r["created_at"] else "?"
                 lines.append(f"  [{r['id']}] ({date}) {r['content']}")
                 if r.get("tags"):
                     lines.append(f"    tags: {r['tags']}")

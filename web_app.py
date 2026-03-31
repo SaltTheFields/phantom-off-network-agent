@@ -1050,7 +1050,7 @@ def dashboard():
             f'<td>{_badge(n.priority)}</td>'
             f'<td style="color:#555">{n.type}</td>'
             f'<td>{_depth_bar(n.research_depth)}</td>'
-            f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:10]}</td>'
+            f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:16]}</td>'
             f'<td>'
             f'<form method="post" action="/topics/{n.slug}/research" style="display:inline">'
             f'<button class="btn-sm btn-green" title="Research now">▶</button></form>'
@@ -1071,7 +1071,7 @@ def dashboard():
         f'<td>{_badge(n.priority)}</td>'
         f'<td style="color:#555">{n.type}</td>'
         f'<td>{_depth_bar(n.research_depth)}</td>'
-        f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:10]}</td>'
+        f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:16]}</td>'
         f'<td>'
         f'<form method="post" action="/topics/{n.slug}/queue" style="display:inline">'
         f'<button class="btn-sm" title="Unarchive">↺</button></form>'
@@ -1428,7 +1428,7 @@ def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
         f'<td style="color:#999;font-size:11px">{_html.escape(r["domain"] or "")}</td>'
         f'<td>{_cred_badge(r)}</td>'
         f'<td style="text-align:center;color:var(--accent)">{r["fetch_count"]}</td>'
-        f'<td style="color:#444;font-size:11px">{str(r.get("last_fetched",""))[:10]}</td>'
+        f'<td style="color:#444;font-size:11px">{str(r.get("last_fetched",""))[:16]}</td>'
         f'<td>{_change_badge(r)}</td>'
         f'<td>{_dead_badge(r)}</td>'
         f'<td><a href="/vault/{_html.escape(r["topic_slug"] or "")}" '
@@ -1669,7 +1669,7 @@ def vault_list():
         f'<tr><td><a href="/vault/{n.slug}">{_html.escape(n.name)}</a></td>'
         f'<td>{_badge(n.status)}</td><td>{_badge(n.priority)}</td>'
         f'<td style="color:#555">{n.type}</td>'
-        f'<td style="color:#484848">{str(n.last_researched or "never")[:10]}</td>'
+        f'<td style="color:#484848">{str(n.last_researched or "never")[:16]}</td>'
         f'<td>{_depth_bar(n.research_depth)}</td>'
         f'<td style="color:var(--accent)">{n.research_runs or ""}</td>'
         f'<td style="color:#484848">{n.total_sources_fetched or ""}</td></tr>'
@@ -1724,8 +1724,8 @@ def vault_note(slug: str):
         f'<div><span class="lbl">Status</span> {_badge(note.status)}</div>'
         f'<div><span class="lbl">Priority</span> {_badge(note.priority)}</div>'
         f'<div><span class="lbl">Type</span> <span>{_html.escape(note.type)}</span></div>'
-        f'<div><span class="lbl">Created</span> <span style="color:#888">{_html.escape(note.created)}</span></div>'
-        f'<div><span class="lbl">Researched</span> <span style="color:#888">{_html.escape(str(note.last_researched or "never"))}</span></div>'
+        f'<div><span class="lbl">Created</span> <span style="color:#888">{_html.escape((note.created or "")[:16])}</span></div>'
+        f'<div><span class="lbl">Researched</span> <span style="color:#888">{_html.escape(str(note.last_researched or "never")[:16])}</span></div>'
         f'<div><span class="lbl">Depth</span> {_depth_bar(note.research_depth)}</div>'
         f'<div><span class="lbl">Runs</span> <span style="color:var(--accent)">{note.research_runs}</span></div>'
         f'<div><span class="lbl">Sources</span> <span style="color:var(--accent)">{note.total_sources_fetched}</span></div>'
@@ -1766,7 +1766,7 @@ def vault_note(slug: str):
                 url  = _html.escape(s.get("url", ""))
                 dom  = _html.escape(s.get("domain", url[:40]))
                 cnt  = s.get("fetch_count", 1)
-                date = (s.get("last_fetched") or "")[:10]
+                date = (s.get("last_fetched") or "")[:16]
                 score_badge = f'<span style="color:{col};font-size:10px;padding:1px 5px;border:1px solid {col}44;border-radius:9px">{lbl} {r}/5</span>'
                 rows.append(
                     f'<tr><td><a href="{url}" target="_blank" rel="noopener">{dom}</a></td>'
@@ -1908,7 +1908,7 @@ def topics_list(status: str = "all"):
         f'<td>{_badge(n.status)}</td><td>{_badge(n.priority)}</td>'
         f'<td style="color:#555">{n.type}</td>'
         f'<td>{"".join(f"<span class=tag>{_html.escape(t)}</span>" for t in n.tags)}</td>'
-        f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:10]}</td>'
+        f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:16]}</td>'
         f'<td style="white-space:nowrap">'
         f'<form method="post" action="/topics/{n.slug}/research" style="display:inline">'
         f'<button class="btn-sm btn-green" title="Research now">▶</button></form> '
@@ -1997,7 +1997,7 @@ def memory_page(q: str = ""):
             f'<td>{_html.escape(r["content"][:300])}'
             f'{"<span style=color:#444;font-size:10px> [sim:" + str(round(r.get("semantic_score",0),2)) + "]</span>" if r.get("semantic_score") else ""}'
             f'</td><td><span class="tag">{_html.escape(r.get("tags",""))}</span></td>'
-            f'<td style="color:#444;font-size:11px">{(r["created_at"] or "")[:10]}</td></tr>'
+            f'<td style="color:#444;font-size:11px">{(r["created_at"] or "")[:16]}</td></tr>'
             for r in results
         ) or f'<tr><td colspan="4" class="empty">No results for "{_html.escape(q)}"</td></tr>'
         results_html = (
@@ -2011,7 +2011,7 @@ def memory_page(q: str = ""):
             f'<tr><td style="color:#444">{r["id"]}</td>'
             f'<td>{_html.escape(r["content"][:300])}</td>'
             f'<td><span class="tag">{_html.escape(r.get("tags",""))}</span></td>'
-            f'<td style="color:#444;font-size:11px">{(r["created_at"] or "")[:10]}</td></tr>'
+            f'<td style="color:#444;font-size:11px">{(r["created_at"] or "")[:16]}</td></tr>'
             for r in recent
         ) or '<tr><td colspan="4" class="empty">No memories yet</td></tr>'
         results_html = (
@@ -2362,7 +2362,7 @@ def gaps_page():
                 f'<td><a href="/vault/{n.slug}" style="color:#ccc">{_html.escape(n.name)}</a></td>'
                 f'<td><span style="color:{pri_col}">{n.priority}</span></td>'
                 f'<td style="color:#555">{n.type}</td>'
-                f'<td style="color:#444">{(n.created or "")[:10]}</td>'
+                f'<td style="color:#444">{(n.created or "")[:16]}</td>'
                 f'<td><form method="post" action="/topics/{n.slug}/research" style="margin:0">'
                 f'<button class="btn-sm btn-green">▶ Run</button></form></td>'
                 f'</tr>'
@@ -2379,7 +2379,7 @@ def gaps_page():
                 f'<td><a href="/vault/{n.slug}" style="color:#ccc">{_html.escape(n.name)}</a></td>'
                 f'<td style="color:#555">{n.type}</td>'
                 f'<td style="color:#444">depth {n.research_depth}</td>'
-                f'<td style="color:#333">{(n.last_researched or "never")[:10]}</td>'
+                f'<td style="color:#333">{(n.last_researched or "never")[:16]}</td>'
                 f'</tr>'
             )
         return '<div class="table-wrap"><table><thead><tr><th>Topic</th><th>Type</th><th>Depth</th><th>Last Run</th></tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>'

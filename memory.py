@@ -259,7 +259,7 @@ class MemoryStore:
             return ""
         lines = ["Relevant memories from past sessions:"]
         for r in results:
-            date = r["created_at"][:10] if r["created_at"] else "?"
+            date = r["created_at"][:16] if r["created_at"] else "?"
             sem = f" [sim:{r['semantic_score']:.2f}]" if r.get("semantic_score") else ""
             line = f"  [{r['id']}] ({date}){sem} {r['content']}"
             if r.get("source_url"):
