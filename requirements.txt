@@ -18,9 +18,10 @@ lxml>=5.0.0
 # sentence-transformers>=2.7.0
 
 # Web UI (optional — only needed if using web_app.py)
-# pip install fastapi "uvicorn[standard]"
+# pip install fastapi "uvicorn[standard]" python-multipart
 # fastapi>=0.111.0
 # uvicorn[standard]>=0.29.0
+# python-multipart>=0.0.9   ← required for form parsing (topics/new, vault edit, settings)
 
 # Testing
 pytest>=8.0.0
