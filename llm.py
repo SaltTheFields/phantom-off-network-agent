@@ -1,6 +1,14 @@
 import sys
+import asyncio
 import ollama as _ollama
 from config import cfg
+
+# ── Windows asyncio fix ───────────────────────────────────────────────────────
+# The ProactorEventLoop (Windows default) fires spurious ConnectionResetError
+# WinError 10054 when Ollama closes its TCP connection after each response.
+# Switching to SelectorEventLoop eliminates this noise entirely.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 class OllamaConnectionError(Exception):
