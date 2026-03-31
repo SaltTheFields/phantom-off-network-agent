@@ -76,7 +76,10 @@ def _worker(
 
     def _p(msg: str):
         with print_lock:
-            print(f"       {msg}", flush=True)
+            try:
+                print(f"       {msg}", flush=True)
+            except OSError:
+                print(f"       {msg.encode('ascii', errors='replace').decode()}", flush=True)
 
     try:
         # Mark active now (inside worker, not before pool starts)

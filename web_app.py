@@ -1403,7 +1403,6 @@ def topics_list(status: str = "all"):
         f'<td style="color:#555">{n.type}</td>'
         f'<td>{"".join(f"<span class=tag>{_html.escape(t)}</span>" for t in n.tags)}</td>'
         f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:10]}</td>'
-        f'<td style="color:#444">{n.refresh_interval_days}d</td>'
         f'<td style="white-space:nowrap">'
         f'<form method="post" action="/topics/{n.slug}/research" style="display:inline">'
         f'<button class="btn-sm btn-green" title="Research now">▶</button></form> '
@@ -1426,6 +1425,7 @@ def topics_list(status: str = "all"):
         '<label style="margin-left:14px">Priority</label>'
         '<select name="priority"><option>medium</option><option>high</option><option>low</option></select></div>'
         '<div class="row"><label>Tags</label><input type="text" name="tags" placeholder="comma separated"></div>'
+        '<input type="hidden" name="redirect" value="/topics">'
         '<div class="row"><input type="submit" value="Create Topic"></div>'
         '</form></details>'
     )
@@ -1433,7 +1433,7 @@ def topics_list(status: str = "all"):
         f'<h1>Topics <span style="color:#444;font-size:13px">({len(notes)})</span></h1>'
         f'<div style="margin-bottom:10px;color:#555;font-size:11px">Filter: {filters}</div>'
         f'<table><thead><tr><th>Name</th><th>Status</th><th>Priority</th><th>Type</th>'
-        f'<th>Tags</th><th>Last Research</th><th>Refresh</th><th></th></tr></thead>'
+        f'<th>Tags</th><th>Last Research</th><th></th></tr></thead>'
         f'<tbody>{rows}</tbody></table>{new_form}'
     ), "topics")
 
@@ -1445,11 +1445,15 @@ async def new_topic(request: Request):
     ttype = str(form.get("type", "research"))
     prio  = str(form.get("priority", "medium"))
     tags  = [t.strip() for t in str(form.get("tags", "")).split(",") if t.strip()]
+    redirect = str(form.get("redirect", "")).strip()  # optional: where to go after
     if name:
+        slug = _vault.name_to_slug(name)
         try:
             _topics.create_topic(name, type=ttype, priority=prio, tags=tags)
         except ValueError:
-            pass
+            pass  # already exists — still redirect to its vault page
+        dest = redirect or f"/vault/{slug}"
+        return RedirectResponse(dest, status_code=303)
     return RedirectResponse("/topics", status_code=303)
 
 
