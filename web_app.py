@@ -893,6 +893,19 @@ _TAB_JS = """<script>
 })();
 </script>"""
 
+_AUTO_REFRESH_JS = """<script>
+(function(){
+  var _rSecs=30,_rLeft=30;
+  var _bar=document.getElementById('refresh-bar');
+  setInterval(function(){
+    _rLeft--;
+    if(_bar)_bar.style.width=Math.round((_rLeft/_rSecs)*100)+'%';
+    if(_rLeft<=0)location.reload();
+  },1000);
+})();
+</script>"""
+
+
 def _page(title: str, body: str, active: str = "") -> HTMLResponse:
     return HTMLResponse(
         f'<!DOCTYPE html><html><head>'
@@ -900,7 +913,7 @@ def _page(title: str, body: str, active: str = "") -> HTMLResponse:
         f'<meta name="theme-color" content="#0b0b10">'
         f'<title>{_html.escape(title)} — Phantom</title>'
         f'{_CSS}</head>'
-        f'<body>{_ACCENT_JS}{_TAB_JS}{_nav(active)}'
+        f'<body>{_ACCENT_JS}{_TAB_JS}{_AUTO_REFRESH_JS}{_nav(active)}'
         f'<div class="container">{body}</div></body></html>'
     )
 
@@ -1260,15 +1273,6 @@ setInterval(function(){
   t.textContent=(v+1)+'s';
 },1000);
 
-// ── Auto-refresh every 30s with countdown bar
-var _refreshSecs=30;
-var _refreshLeft=_refreshSecs;
-var _bar=document.getElementById('refresh-bar');
-setInterval(function(){
-  _refreshLeft--;
-  if(_bar) _bar.style.width=Math.round((_refreshLeft/_refreshSecs)*100)+'%';
-  if(_refreshLeft<=0) location.reload();
-},1000);
 </script>"""
 
     left  = f'{active_panel}{controls}{queue_section}'
@@ -2357,32 +2361,36 @@ def gaps_page():
         rows = []
         for n in never_run[:30]:
             pri_col = {"high": "#ff6b6b", "medium": "#ffd93d", "low": "#555"}.get(n.priority, "#555")
+            last = (n.last_researched or "")[:16] or '<span style="color:#ff6b6b;font-size:10px">never</span>'
             rows.append(
                 f'<tr>'
                 f'<td><a href="/vault/{n.slug}" style="color:#ccc">{_html.escape(n.name)}</a></td>'
                 f'<td><span style="color:{pri_col}">{n.priority}</span></td>'
                 f'<td style="color:#555">{n.type}</td>'
-                f'<td style="color:#444">{(n.created or "")[:16]}</td>'
+                f'<td style="color:#444;font-size:11px">{(n.created or "")[:16]}</td>'
+                f'<td style="color:#444;font-size:11px">{last}</td>'
                 f'<td><form method="post" action="/topics/{n.slug}/research" style="margin:0">'
                 f'<button class="btn-sm btn-green">▶ Run</button></form></td>'
                 f'</tr>'
             )
-        return '<div class="table-wrap"><table><thead><tr><th>Topic</th><th>Priority</th><th>Type</th><th>Created</th><th></th></tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>'
+        return '<div class="table-wrap"><table><thead><tr><th>Topic</th><th>Priority</th><th>Type</th><th>Created</th><th>Last Run</th><th></th></tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>'
 
     def _orphan_rows():
         if not orphans:
             return '<div class="empty" style="padding:20px">No isolated notes found.</div>'
         rows = []
         for n in orphans[:20]:
+            last = (n.last_researched or "")[:16] or '<span style="color:#ff6b6b;font-size:10px">never</span>'
             rows.append(
                 f'<tr>'
                 f'<td><a href="/vault/{n.slug}" style="color:#ccc">{_html.escape(n.name)}</a></td>'
                 f'<td style="color:#555">{n.type}</td>'
+                f'<td style="color:#444;font-size:11px">{(n.created or "")[:16]}</td>'
                 f'<td style="color:#444">depth {n.research_depth}</td>'
-                f'<td style="color:#333">{(n.last_researched or "never")[:16]}</td>'
+                f'<td style="color:#444;font-size:11px">{last}</td>'
                 f'</tr>'
             )
-        return '<div class="table-wrap"><table><thead><tr><th>Topic</th><th>Type</th><th>Depth</th><th>Last Run</th></tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>'
+        return '<div class="table-wrap"><table><thead><tr><th>Topic</th><th>Type</th><th>Created</th><th>Depth</th><th>Last Run</th></tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>'
 
     def _frontier_rows():
         if not frontier:
