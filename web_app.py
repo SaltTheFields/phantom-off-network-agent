@@ -161,22 +161,41 @@ a:hover{color:var(--accent-bright);text-decoration:underline}
 
 /* ── Banner ── */
 .banner-wrap{
-  background:#080808;
-  border-bottom:1px solid #181818;
-  padding:12px 24px 8px;
+  background:#060608;
+  border-bottom:1px solid #1a1a2a;
+  padding:14px 24px 10px;
   overflow:hidden;
-  position: relative;
+  position:relative;
 }
+/* scan-line sweep */
+.banner-wrap::before {
+  content:'';
+  position:absolute;
+  top:-100%; left:0; right:0;
+  height:200%;
+  background:repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(100,200,255,0.018) 3px,
+    rgba(100,200,255,0.018) 4px
+  );
+  pointer-events:none;
+  animation:scanDown 12s linear infinite;
+}
+/* running: radial pulse + faster scan */
 .banner-wrap.running::after {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: radial-gradient(circle at center, var(--accent-bg) 0%, transparent 70%);
-  opacity: 0.3;
-  pointer-events: none;
-  animation: pulseBg 4s ease-in-out infinite;
+  content:'';
+  position:absolute;
+  top:0; left:0; right:0; bottom:0;
+  background:radial-gradient(ellipse at 50% 120%, hsl(200,80%,20%) 0%, transparent 65%);
+  opacity:0;
+  pointer-events:none;
+  animation:pulseBg 3s ease-in-out infinite;
 }
-@keyframes pulseBg { 0%, 100% { opacity: 0.1; } 50% { opacity: 0.4; } }
+.banner-wrap.running::before { animation-duration:4s; }
+@keyframes scanDown  { from{transform:translateY(0)} to{transform:translateY(50%)} }
+@keyframes pulseBg   { 0%,100%{opacity:0} 50%{opacity:0.55} }
 
 .banner{
   display:inline-block;
@@ -185,28 +204,52 @@ a:hover{color:var(--accent-bright);text-decoration:underline}
   letter-spacing:.02em;
   white-space:pre;
   font-weight:bold;
-  background:var(--accent-grad);
+  background:linear-gradient(90deg,
+    #7dd3fc 0%,
+    #a78bfa 18%,
+    #f472b6 34%,
+    #fb923c 50%,
+    #facc15 66%,
+    #4ade80 82%,
+    #7dd3fc 100%
+  );
+  background-size:300% auto;
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+  animation:bannerFlow 10s linear infinite;
+  user-select:none;
+  position:relative;
+  z-index:1;
+}
+.banner-wrap.running .banner {
+  animation:bannerFlow 4s linear infinite, glowPulse 1.8s ease-in-out infinite alternate;
+}
+@keyframes bannerFlow  { 0%{background-position:0% center} 100%{background-position:300% center} }
+@keyframes glowPulse   { from{filter:drop-shadow(0 0 3px #7dd3fc88) drop-shadow(0 0 8px #a78bfa44)}
+                           to{filter:drop-shadow(0 0 10px #7dd3fccc) drop-shadow(0 0 22px #a78bfa88)} }
+
+.banner-sub{
+  font-size:10px;
+  margin-top:3px;
+  padding-left:2px;
+  letter-spacing:.25em;
+  text-transform:uppercase;
+  position:relative;z-index:1;
+  background:linear-gradient(90deg,#a78bfa,#7dd3fc,#4ade80,#a78bfa);
   background-size:250% auto;
   -webkit-background-clip:text;
   -webkit-text-fill-color:transparent;
   background-clip:text;
-  animation:bannerFlow 8s linear infinite;
-  user-select:none;
+  animation:bannerFlow 8s linear infinite reverse;
 }
-.banner-wrap.running .banner {
-  animation: bannerFlow 3s linear infinite, glow 2s ease-in-out infinite alternate;
-  filter: drop-shadow(0 0 5px var(--accent-dim));
-}
-@keyframes bannerFlow{0%{background-position:0% center}100%{background-position:250% center}}
-@keyframes glow { from { filter: drop-shadow(0 0 2px var(--accent-dim)); } to { filter: drop-shadow(0 0 8px var(--accent-bright)); } }
-
-.banner-sub{
-  font-size:10px;
-  color:var(--accent-dim);
-  margin-top:2px;
-  padding-left:2px;
-  letter-spacing:.2em;
-  text-transform: uppercase;
+/* auto-refresh countdown */
+#refresh-bar{
+  position:absolute;bottom:0;left:0;
+  height:2px;
+  background:linear-gradient(90deg,#7dd3fc,#a78bfa,#4ade80);
+  transition:width 1s linear;
+  z-index:2;
 }
 
 /* ── Layout ── */
@@ -772,7 +815,9 @@ def _nav(active: str = "") -> str:
     )
     dot_cls = "live-dot on" if _run_status["running"] else "live-dot"
     return (
-        f'<div class="banner-wrap"><pre class="banner">{_BANNER}</pre></div>'
+        f'<div class="banner-wrap" id="banner-wrap"><pre class="banner">{_BANNER}</pre>'
+        f'<div class="banner-sub">off-network-agent</div>'
+        f'<div id="refresh-bar" style="width:100%"></div></div>'
         f'<nav>{links}<span class="{dot_cls}" title="{"researching" if _run_status["running"] else "idle"}"></span></nav>'
     )
 
@@ -901,24 +946,48 @@ def dashboard():
         last_cls = "alert-ok" if "complete" in _run_status["last"].lower() else "alert-warn"
         controls += f'<div class="alert {last_cls}" id="last-status">{_html.escape(_run_status["last"])}</div>'
 
-    # ── Research overview (all non-archived, sorted by priority then depth)
+    # ── Research overview — currently-researching topic pinned first, then priority+depth
     PRIO = {"high": 0, "medium": 1, "low": 2}
-    sorted_topics = sorted(non_arch, key=lambda n: (PRIO.get(n.priority, 1), -n.research_depth, n.name))
-    topic_rows = "".join(
-        f'<tr>'
-        f'<td><a href="/vault/{n.slug}">{_html.escape(n.name)}</a></td>'
-        f'<td>{_badge(n.status)}</td>'
-        f'<td>{_badge(n.priority)}</td>'
-        f'<td style="color:#555">{n.type}</td>'
-        f'<td>{_depth_bar(n.research_depth)}</td>'
-        f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:10]}</td>'
-        f'<td>'
-        f'<form method="post" action="/topics/{n.slug}/research" style="display:inline">'
-        f'<button class="btn-sm btn-green" title="Research now">▶</button></form>'
-        f'</td>'
-        f'</tr>'
-        for n in sorted_topics
-    ) or '<tr><td colspan="6" class="empty">No active topics — create one in Topics</td></tr>'
+    active_slug = (_run_status.get("active_topic") or "").lower().replace(" ", "-")
+    # try to match by name→slug if the stored value is a display name
+    if active_slug and not any(n.slug == active_slug for n in non_arch):
+        from vault import VaultManager as _VM
+        active_slug = _vault.name_to_slug(_run_status.get("active_topic", ""))
+
+    def _topic_sort_key(n):
+        is_active = (n.slug == active_slug and _run_status["running"])
+        return (0 if is_active else 1, PRIO.get(n.priority, 1), -n.research_depth, n.name)
+
+    sorted_topics = sorted(non_arch, key=_topic_sort_key)
+
+    def _topic_row(n):
+        is_active = n.slug == active_slug and _run_status["running"]
+        row_style = (
+            'background:linear-gradient(90deg,#0a1a0a,#0b1520);'
+            'border-left:3px solid #4ade80;'
+        ) if is_active else ''
+        indicator = (
+            '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;'
+            'background:#4ade80;box-shadow:0 0 6px #4ade80;margin-right:6px;'
+            'animation:glowPulse 1.2s ease-in-out infinite alternate"></span>'
+        ) if is_active else ''
+        return (
+            f'<tr style="{row_style}">'
+            f'<td><a href="/vault/{n.slug}">{indicator}{_html.escape(n.name)}</a></td>'
+            f'<td>{_badge(n.status)}</td>'
+            f'<td>{_badge(n.priority)}</td>'
+            f'<td style="color:#555">{n.type}</td>'
+            f'<td>{_depth_bar(n.research_depth)}</td>'
+            f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:10]}</td>'
+            f'<td>'
+            f'<form method="post" action="/topics/{n.slug}/research" style="display:inline">'
+            f'<button class="btn-sm btn-green" title="Research now">▶</button></form>'
+            f'</td>'
+            f'</tr>'
+        )
+
+    topic_rows = "".join(_topic_row(n) for n in sorted_topics) \
+        or '<tr><td colspan="7" class="empty">No active topics — create one in Topics</td></tr>'
 
     # Archived rows (hidden by default, revealed by checkbox)
     arch_notes = sorted([n for n in all_notes if n.status == "archived"],
@@ -1117,6 +1186,16 @@ setInterval(function(){
   if(!t) return;
   var v=parseInt(t.textContent)||0;
   t.textContent=(v+1)+'s';
+},1000);
+
+// ── Auto-refresh every 30s with countdown bar
+var _refreshSecs=30;
+var _refreshLeft=_refreshSecs;
+var _bar=document.getElementById('refresh-bar');
+setInterval(function(){
+  _refreshLeft--;
+  if(_bar) _bar.style.width=Math.round((_refreshLeft/_refreshSecs)*100)+'%';
+  if(_refreshLeft<=0) location.reload();
 },1000);
 </script>"""
 
