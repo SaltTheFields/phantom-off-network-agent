@@ -71,6 +71,17 @@ class MemoryStore:
                     session_id    TEXT DEFAULT '',
                     reliability   INTEGER DEFAULT 3
                 );
+
+                CREATE TABLE IF NOT EXISTS note_history (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    slug         TEXT NOT NULL,
+                    body         TEXT NOT NULL,
+                    depth        INTEGER DEFAULT 0,
+                    word_count   INTEGER DEFAULT 0,
+                    saved_at     TEXT DEFAULT (datetime('now')),
+                    run_number   INTEGER DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS note_history_slug ON note_history(slug, saved_at DESC);
             """)
             conn.commit()
             conn.close()
@@ -322,6 +333,49 @@ class MemoryStore:
             total = cur.fetchone()[0]
             conn.close()
             return total
+
+    # ── Note history ──────────────────────────────────────────────────────────
+
+    def save_note_snapshot(self, slug: str, body: str, depth: int = 0) -> int:
+        """Save a snapshot of a note body before it gets overwritten."""
+        word_count = len(body.split()) if body else 0
+        with self._lock:
+            conn = self._get_conn()
+            cur = conn.cursor()
+            # run_number = how many snapshots exist for this slug already + 1
+            cur.execute("SELECT COUNT(*) FROM note_history WHERE slug = ?", (slug,))
+            run_number = (cur.fetchone()[0] or 0) + 1
+            cur.execute(
+                "INSERT INTO note_history (slug, body, depth, word_count, run_number) VALUES (?, ?, ?, ?, ?)",
+                (slug, body, depth, word_count, run_number),
+            )
+            conn.commit()
+            last_id = cur.lastrowid
+            conn.close()
+            return last_id
+
+    def get_note_history(self, slug: str, limit: int = 20) -> list[dict]:
+        """Return snapshots for a slug, newest first."""
+        with self._lock:
+            conn = self._get_conn()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id, slug, body, depth, word_count, saved_at, run_number "
+                "FROM note_history WHERE slug = ? ORDER BY saved_at DESC LIMIT ?",
+                (slug, limit),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            conn.close()
+            return rows
+
+    def get_note_snapshot_count(self, slug: str) -> int:
+        with self._lock:
+            conn = self._get_conn()
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM note_history WHERE slug = ?", (slug,))
+            count = cur.fetchone()[0]
+            conn.close()
+            return count
 
     def close(self):
         # connections are closed per-call now

@@ -391,6 +391,14 @@ def execute_tool(tool_call: dict, memory_store, vault=None, topics=None) -> str:
                 note = Note(slug=slug, name=topic, body=body)
                 note.created = str(date.today())
             else:
+                # Snapshot previous body before overwriting
+                if memory_store and note.body and note.body.strip():
+                    try:
+                        memory_store.save_note_snapshot(
+                            note.slug, note.body, depth=note.research_depth
+                        )
+                    except Exception:
+                        pass
                 note.body = body
 
             # Record sources with credibility score

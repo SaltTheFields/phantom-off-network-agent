@@ -807,8 +807,8 @@ def _format_log_line(raw: str) -> str:
 
 def _nav(active: str = "") -> str:
     pages = [("/", "Dashboard"), ("/vault", "Vault"), ("/graph", "Graph"),
-             ("/topics", "Topics"), ("/sources", "Sources"), ("/memory", "Memory"),
-             ("/agents", "Agents"), ("/settings", "Settings")]
+             ("/topics", "Topics"), ("/sources", "Sources"), ("/search", "Search"),
+             ("/memory", "Memory"), ("/agents", "Agents"), ("/settings", "Settings")]
     links = "".join(
         f'<a href="{h}" class="{"active" if label.lower() == active else ""}">{label}</a>'
         for h, label in pages
@@ -1308,6 +1308,25 @@ def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
     except Exception:
         pass
 
+    # Pull article cache change data and merge in
+    cache_changed = {}
+    cache_fetched_at = {}
+    try:
+        import sqlite3 as _sq3
+        cc = _sq3.connect("data/article_cache.db")
+        cc.row_factory = _sq3.Row
+        for cr in cc.execute("SELECT url, changed, fetched_at, fetch_count FROM article_cache").fetchall():
+            cache_changed[cr["url"]] = bool(cr["changed"])
+            cache_fetched_at[cr["url"]] = cr["fetched_at"]
+        cc.close()
+    except Exception:
+        pass
+    for r in rows:
+        r["cache_changed"] = cache_changed.get(r["url"], False)
+        r["cache_fetched_at"] = cache_fetched_at.get(r["url"], "")
+
+    changed_count = sum(1 for r in rows if r["cache_changed"])
+
     # Summary stats
     total = len(rows)
     by_cred = {}
@@ -1320,6 +1339,7 @@ def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
         f'<div class="stats">'
         f'<div class="stat-card"><div class="stat-num">{total}</div><div class="stat-lbl">Sources</div></div>'
         f'<div class="stat-card"><div class="stat-num">{domains}</div><div class="stat-lbl">Domains</div></div>'
+        f'<div class="stat-card"><div class="stat-num" style="color:#ffd93d">{changed_count}</div><div class="stat-lbl">Updated</div></div>'
         + "".join(
             f'<div class="stat-card"><div class="stat-num" style="color:{_CRED_COLOR.get(k,"#888")}">{v}</div>'
             f'<div class="stat-lbl">{_CRED_LABEL.get(k,str(k))}</div></div>'
@@ -1360,28 +1380,180 @@ def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
     def _short_url(url, n=60):
         return _html.escape(url[:n] + ("…" if len(url) > n else ""))
 
+    def _change_badge(r):
+        if r.get("cache_changed"):
+            return '<span style="background:#2a1a00;color:#ffd93d;padding:1px 7px;border-radius:3px;font-size:10px" title="Content changed since first fetch">⚡ updated</span>'
+        if r.get("cache_fetched_at"):
+            return '<span style="color:#1a1a1a;font-size:10px">cached</span>'
+        return '<span style="color:#1a1a1a;font-size:10px">—</span>'
+
     table_rows = "".join(
-        f'<tr>'
-        f'<td style="max-width:340px;overflow:hidden"><a href="{_html.escape(r["url"])}" target="_blank" '
+        f'<tr{"" if not r.get("cache_changed") else " style=background:#120f00"}">'
+        f'<td style="max-width:320px;overflow:hidden"><a href="{_html.escape(r["url"])}" target="_blank" '
         f'style="color:var(--accent-dim);font-size:11px">{_short_url(r["url"])}</a></td>'
         f'<td style="color:#999;font-size:11px">{_html.escape(r["domain"] or "")}</td>'
         f'<td>{_cred_badge(r)}</td>'
         f'<td style="text-align:center;color:var(--accent)">{r["fetch_count"]}</td>'
         f'<td style="color:#444;font-size:11px">{str(r.get("last_fetched",""))[:10]}</td>'
+        f'<td>{_change_badge(r)}</td>'
         f'<td><a href="/vault/{_html.escape(r["topic_slug"] or "")}" '
         f'style="color:#446;font-size:11px">{_html.escape(r["topic_slug"] or "")}</a></td>'
         f'</tr>'
         for r in rows
-    ) or f'<tr><td colspan="6" class="empty">No sources yet</td></tr>'
+    ) or f'<tr><td colspan="7" class="empty">No sources yet</td></tr>'
 
     body = (
         f'<h1>Sources <span style="color:#333;font-size:13px">audit log</span></h1>'
         + stats_html + filter_bar
         + '<div class="table-wrap"><table><thead><tr>'
-        + '<th>URL</th><th>Domain</th><th>Credibility</th><th>Fetches</th><th>Last Seen</th><th>Topic</th>'
+        + '<th>URL</th><th>Domain</th><th>Credibility</th><th>Fetches</th><th>Last Seen</th><th>Cache</th><th>Topic</th>'
         + f'</tr></thead><tbody>{table_rows}</tbody></table></div>'
     )
     return _page("Sources", body, "sources")
+
+
+# ── Vault search ────────────────────────────────────────────────────────────────
+
+@app.get("/search", response_class=HTMLResponse)
+def vault_search(q: str = ""):
+    results = []
+    if q.strip():
+        q_lower = q.lower()
+        for note in _topics.list_topics():
+            body = note.body or ""
+            name = note.name or ""
+            # score: title match = 10pts, body match = count of occurrences
+            title_score = 10 if q_lower in name.lower() else 0
+            body_score = body.lower().count(q_lower)
+            score = title_score + body_score
+            if score > 0:
+                # Find a short excerpt around the first match
+                idx = body.lower().find(q_lower)
+                if idx >= 0:
+                    start = max(0, idx - 80)
+                    end = min(len(body), idx + 120)
+                    excerpt = ("…" if start > 0 else "") + body[start:end].replace("\n", " ") + ("…" if end < len(body) else "")
+                    # Highlight the match
+                    hi = body[idx:idx+len(q)]
+                    excerpt = excerpt.replace(hi, f'<mark style="background:#2a1a00;color:#ffd93d;padding:0 2px">{_html.escape(hi)}</mark>', 1)
+                else:
+                    excerpt = body[:200].replace("\n", " ") + "…"
+                results.append({"note": note, "score": score, "excerpt": excerpt})
+        results.sort(key=lambda x: -x["score"])
+
+    result_html = ""
+    if q.strip() and not results:
+        result_html = '<div class="empty" style="padding:40px 0;text-align:center">No results found for <strong>' + _html.escape(q) + '</strong></div>'
+    elif results:
+        result_html = f'<div style="color:#444;font-size:11px;margin-bottom:16px">{len(results)} result{"s" if len(results)!=1 else ""} for <span style="color:#ccc">"{_html.escape(q)}"</span></div>'
+        for r in results:
+            n = r["note"]
+            snap_count = _memory.get_note_snapshot_count(n.slug)
+            result_html += (
+                f'<div style="border:1px solid #1a1a1a;border-radius:4px;padding:14px 16px;margin-bottom:10px;background:#0d0d0d">'
+                f'<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">'
+                f'<a href="/vault/{n.slug}" style="color:#fff;font-size:14px;font-weight:bold">{_html.escape(n.name)}</a>'
+                f'<span style="color:#444;font-size:10px">{n.type}</span>'
+                f'{_badge(n.priority)}'
+                f'<span style="margin-left:auto;color:#333;font-size:10px">depth {n.research_depth} · {snap_count} run{"s" if snap_count!=1 else ""}</span>'
+                f'</div>'
+                f'<div style="color:#666;font-size:12px;line-height:1.6">{r["excerpt"]}</div>'
+                f'</div>'
+            )
+
+    body = (
+        f'<h1>Search Vault</h1>'
+        f'<form method="get" style="display:flex;gap:8px;margin-bottom:24px">'
+        f'<input type="text" name="q" value="{_html.escape(q)}" placeholder="Search notes…" autofocus'
+        f' style="flex:1;max-width:480px;padding:8px 12px;background:#111;border:1px solid #2a2a2a;'
+        f'color:#ccc;border-radius:3px;font-family:inherit;font-size:13px">'
+        f'<button type="submit" class="btn-green" style="padding:8px 18px">Search</button>'
+        f'{"<a href=/search><button class=btn-dim style=padding:8px>✕</button></a>" if q else ""}'
+        f'</form>'
+        f'{result_html}'
+    )
+    return _page("Search", body, "search")
+
+
+# ── Note history / diff ─────────────────────────────────────────────────────────
+
+@app.get("/vault/{slug}/history", response_class=HTMLResponse)
+def note_history(slug: str):
+    note = _vault.read_note(slug)
+    if not note:
+        return _page("Not Found", f'<div class="alert alert-warn">Note not found: {_html.escape(slug)}</div>', "vault")
+
+    snapshots = _memory.get_note_history(slug)
+    if not snapshots:
+        return _page(f"History: {note.name}",
+            f'<h1>History: {_html.escape(note.name)}</h1>'
+            f'<div class="empty" style="padding:40px 0;text-align:center">No history yet — snapshots are saved each time the agent rewrites this note.</div>',
+            "vault")
+
+    import difflib
+
+    def _diff_html(old_text: str, new_text: str) -> str:
+        old_lines = old_text.splitlines(keepends=True)
+        new_lines = new_text.splitlines(keepends=True)
+        diff = list(difflib.unified_diff(old_lines, new_lines, lineterm="", n=2))
+        if not diff:
+            return '<div style="color:#333;font-size:11px;padding:8px">No textual changes detected.</div>'
+        html_lines = []
+        for line in diff[3:]:  # skip @@-header lines
+            if line.startswith("@@"):
+                html_lines.append(f'<div style="color:#446;padding:2px 6px;font-size:10px">{_html.escape(line)}</div>')
+            elif line.startswith("+"):
+                html_lines.append(f'<div style="background:#0a1a0a;color:#6bcb77;padding:1px 6px">{_html.escape(line)}</div>')
+            elif line.startswith("-"):
+                html_lines.append(f'<div style="background:#1a0a0a;color:#ff6b6b;padding:1px 6px">{_html.escape(line)}</div>')
+            else:
+                html_lines.append(f'<div style="color:#444;padding:1px 6px">{_html.escape(line)}</div>')
+        return "".join(html_lines)
+
+    # Build timeline: current vs each snapshot, and snapshots vs each other
+    # snapshots[0] = most recent (before current), snapshots[1] = before that, etc.
+    current_body = note.body or ""
+    versions = [{"label": "Current", "body": current_body, "saved_at": "now",
+                 "depth": note.research_depth, "word_count": len(current_body.split())}]
+    for s in snapshots:
+        versions.append({"label": f'Run #{s["run_number"]}', "body": s["body"],
+                         "saved_at": s["saved_at"][:16], "depth": s["depth"],
+                         "word_count": s["word_count"]})
+
+    sections = []
+    for i in range(len(versions) - 1):
+        newer = versions[i]
+        older = versions[i + 1]
+        words_delta = newer["word_count"] - older["word_count"]
+        delta_col = "#6bcb77" if words_delta >= 0 else "#ff6b6b"
+        delta_str = f'{"+" if words_delta >= 0 else ""}{words_delta} words'
+        sections.append(
+            f'<div style="border:1px solid #1a1a2a;border-radius:4px;margin-bottom:18px;overflow:hidden">'
+            f'<div style="background:#0d0d12;padding:10px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #1a1a2a">'
+            f'<span style="color:#a78bfa;font-weight:bold">{newer["label"]}</span>'
+            f'<span style="color:#333">→</span>'
+            f'<span style="color:#555">{older["label"]}</span>'
+            f'<span style="color:#444;font-size:10px">{older["saved_at"]}</span>'
+            f'<span style="margin-left:auto;color:{delta_col};font-size:11px">{delta_str}</span>'
+            f'<span style="color:#333;font-size:10px">depth {older["depth"]} → {newer["depth"]}</span>'
+            f'</div>'
+            f'<div style="font-family:monospace;font-size:11px;line-height:1.5;max-height:400px;overflow-y:auto">'
+            f'{_diff_html(older["body"], newer["body"])}'
+            f'</div></div>'
+        )
+
+    body = (
+        f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">'
+        f'<h1 style="margin:0">History: {_html.escape(note.name)}</h1>'
+        f'<span style="color:#333">{len(snapshots)} snapshot{"s" if len(snapshots)!=1 else ""}</span>'
+        f'<a href="/vault/{slug}" style="margin-left:auto"><button class="btn-dim">← Back to Note</button></a>'
+        f'</div>'
+        f'<div style="color:#444;font-size:11px;margin-bottom:20px">'
+        f'Green = added &nbsp;·&nbsp; Red = removed &nbsp;·&nbsp; Showing {len(sections)} diff{"s" if len(sections)!=1 else ""}'
+        f'</div>'
+        + "".join(sections)
+    )
+    return _page(f"History: {note.name}", body, "vault")
 
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -1521,6 +1693,7 @@ def vault_note(slug: str):
         f'<form method="post" action="/topics/{note.slug}/research">'
         f'<button class="btn-green">▶ Research Now</button></form>'
         f'<a href="/vault/{note.slug}/edit"><button>✎ Edit Note</button></a>'
+        f'<a href="/vault/{note.slug}/history"><button class="btn-dim">⏱ History</button></a>'
         f'<form method="post" action="/topics/{note.slug}/queue"><button>↺ Requeue</button></form>'
         f'<form method="post" action="/topics/{note.slug}/archive"><button class="btn-danger">Archive</button></form>'
         '<a href="/vault"><button class="btn-dim">← Back</button></a>'
