@@ -51,6 +51,11 @@ _run_status: dict = {
 _sse_subscribers: list[queue.Queue] = []
 _sse_lock = threading.Lock()
 
+# ── Dead link scan state ───────────────────────────────────────────────────────
+_dead_links: dict = {}          # url -> {"status": "ok"|"dead"|"timeout"|"error", "code": int, "checked_at": str}
+_dead_scan_running: bool = False
+_dead_scan_lock = threading.Lock()
+
 
 def _broadcast(msg: str):
     with _sse_lock:
@@ -808,7 +813,7 @@ def _format_log_line(raw: str) -> str:
 def _nav(active: str = "") -> str:
     pages = [("/", "Dashboard"), ("/vault", "Vault"), ("/graph", "Graph"),
              ("/topics", "Topics"), ("/sources", "Sources"), ("/search", "Search"),
-             ("/memory", "Memory"), ("/agents", "Agents"), ("/settings", "Settings")]
+             ("/gaps", "Gaps"), ("/memory", "Memory"), ("/agents", "Agents"), ("/settings", "Settings")]
     links = "".join(
         f'<a href="{h}" class="{"active" if label.lower() == active else ""}">{label}</a>'
         for h, label in pages
@@ -1327,6 +1332,16 @@ def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
 
     changed_count = sum(1 for r in rows if r["cache_changed"])
 
+    # Merge dead link status
+    for r in rows:
+        dl = _dead_links.get(r["url"], {})
+        r["dead_status"] = dl.get("status", "")
+        r["dead_code"] = dl.get("code", 0)
+        r["dead_checked_at"] = dl.get("checked_at", "")
+
+    dead_count = sum(1 for r in rows if r["dead_status"] == "dead")
+    scan_running_badge = ' <span style="color:#ffd93d;font-size:10px">scanning…</span>' if _dead_scan_running else ""
+
     # Summary stats
     total = len(rows)
     by_cred = {}
@@ -1340,6 +1355,7 @@ def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
         f'<div class="stat-card"><div class="stat-num">{total}</div><div class="stat-lbl">Sources</div></div>'
         f'<div class="stat-card"><div class="stat-num">{domains}</div><div class="stat-lbl">Domains</div></div>'
         f'<div class="stat-card"><div class="stat-num" style="color:#ffd93d">{changed_count}</div><div class="stat-lbl">Updated</div></div>'
+        f'<div class="stat-card"><div class="stat-num" style="color:#ff6b6b">{dead_count}</div><div class="stat-lbl">Dead Links{scan_running_badge}</div></div>'
         + "".join(
             f'<div class="stat-card"><div class="stat-num" style="color:{_CRED_COLOR.get(k,"#888")}">{v}</div>'
             f'<div class="stat-lbl">{_CRED_LABEL.get(k,str(k))}</div></div>'
@@ -1387,26 +1403,55 @@ def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
             return '<span style="color:#1a1a1a;font-size:10px">cached</span>'
         return '<span style="color:#1a1a1a;font-size:10px">—</span>'
 
+    def _dead_badge(r):
+        st = r.get("dead_status", "")
+        if st == "dead":
+            code = r.get("dead_code", 0)
+            return f'<span style="background:#1a0000;color:#ff6b6b;padding:1px 7px;border-radius:3px;font-size:10px" title="HTTP {code}">✗ {code or "dead"}</span>'
+        if st == "timeout":
+            return '<span style="background:#1a1000;color:#ffd93d;padding:1px 7px;border-radius:3px;font-size:10px">⏱ timeout</span>'
+        if st == "ok":
+            return '<span style="color:#1a3a1a;font-size:10px">✓ ok</span>'
+        return '<span style="color:#1a1a1a;font-size:10px">—</span>'
+
+    def _row_bg(r):
+        if r.get("dead_status") == "dead":
+            return ' style="background:#0f0000"'
+        if r.get("cache_changed"):
+            return ' style="background:#120f00"'
+        return ""
+
     table_rows = "".join(
-        f'<tr{"" if not r.get("cache_changed") else " style=background:#120f00"}">'
-        f'<td style="max-width:320px;overflow:hidden"><a href="{_html.escape(r["url"])}" target="_blank" '
+        f'<tr{_row_bg(r)}>'
+        f'<td style="max-width:280px;overflow:hidden"><a href="{_html.escape(r["url"])}" target="_blank" '
         f'style="color:var(--accent-dim);font-size:11px">{_short_url(r["url"])}</a></td>'
         f'<td style="color:#999;font-size:11px">{_html.escape(r["domain"] or "")}</td>'
         f'<td>{_cred_badge(r)}</td>'
         f'<td style="text-align:center;color:var(--accent)">{r["fetch_count"]}</td>'
         f'<td style="color:#444;font-size:11px">{str(r.get("last_fetched",""))[:10]}</td>'
         f'<td>{_change_badge(r)}</td>'
+        f'<td>{_dead_badge(r)}</td>'
         f'<td><a href="/vault/{_html.escape(r["topic_slug"] or "")}" '
         f'style="color:#446;font-size:11px">{_html.escape(r["topic_slug"] or "")}</a></td>'
         f'</tr>'
         for r in rows
-    ) or f'<tr><td colspan="7" class="empty">No sources yet</td></tr>'
+    ) or f'<tr><td colspan="8" class="empty">No sources yet</td></tr>'
+
+    scan_btn = (
+        '<form method="post" action="/api/deadlinks/scan" style="display:inline">'
+        '<button class="btn-sm btn-dim" title="HEAD-check all source URLs for broken links">🔗 Scan Dead Links</button>'
+        '</form>'
+        if not _dead_scan_running else
+        '<span style="color:#ffd93d;font-size:11px">🔍 Scanning links…</span>'
+    )
 
     body = (
-        f'<h1>Sources <span style="color:#333;font-size:13px">audit log</span></h1>'
+        f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">'
+        f'<h1 style="margin:0">Sources <span style="color:#333;font-size:13px">audit log</span></h1>'
+        f'{scan_btn}</div>'
         + stats_html + filter_bar
         + '<div class="table-wrap"><table><thead><tr>'
-        + '<th>URL</th><th>Domain</th><th>Credibility</th><th>Fetches</th><th>Last Seen</th><th>Cache</th><th>Topic</th>'
+        + '<th>URL</th><th>Domain</th><th>Credibility</th><th>Fetches</th><th>Last Seen</th><th>Cache</th><th>Links</th><th>Topic</th>'
         + f'</tr></thead><tbody>{table_rows}</tbody></table></div>'
     )
     return _page("Sources", body, "sources")
@@ -1666,7 +1711,8 @@ def vault_note(slug: str):
 
     tags  = "".join(f'<span class="tag">{_html.escape(t)}</span>' for t in note.tags) \
             or "<span style='color:#333'>none</span>"
-    feeds = "".join(f'<span class="tag">{_html.escape(f)}</span>' for f in (note.feeds or [])) \
+    feed_list = note.feeds or []
+    feeds = "".join(f'<span class="tag">{_html.escape(f)}</span>' for f in feed_list) \
             or "<span style='color:#333'>none</span>"
     fwd   = ", ".join(
         f'<a href="/vault/{_vault.name_to_slug(l)}">{_html.escape(l)}</a>'
@@ -1685,8 +1731,14 @@ def vault_note(slug: str):
         f'<div><span class="lbl">Sources</span> <span style="color:var(--accent)">{note.total_sources_fetched}</span></div>'
         f'<div style="grid-column:1/-1"><span class="lbl">Tags</span> {tags}</div>'
         f'<div style="grid-column:1/-1"><span class="lbl">Links to</span> {fwd}</div>'
-        f'<div style="grid-column:1/-1"><span class="lbl">Feeds</span> {feeds}</div>'
-        '</div>'
+        + (
+            f'<div style="grid-column:1/-1"><span class="lbl">Feeds</span> {feeds}'
+            + (f' <button class="btn-sm btn-dim" onclick="checkFeeds()" id="feed-check-btn" style="margin-left:8px">📡 Check Now</button>'
+               if feed_list else '')
+            + '</div>'
+            + '<div id="feed-results" style="grid-column:1/-1;display:none"></div>'
+        )
+        + '</div>'
     )
     actions = (
         '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'
@@ -1751,6 +1803,33 @@ function showTab(t){{
   document.getElementById('tab-raw').style.color         = t==='raw'?'var(--accent)':'';
 }}
 showTab('rendered');
+function checkFeeds(){{
+  var btn=document.getElementById('feed-check-btn');
+  var res=document.getElementById('feed-results');
+  if(btn)btn.textContent='📡 Checking…';
+  res.style.display='';
+  res.innerHTML='<span style="color:#444;font-size:11px">Fetching feeds…</span>';
+  fetch('/api/feeds/check/{note.slug}')
+    .then(function(r){{return r.json();}})
+    .then(function(d){{
+      if(d.error){{res.innerHTML='<span style="color:#ff6b6b;font-size:11px">Error: '+d.error+'</span>';if(btn)btn.textContent='📡 Check Now';return;}}
+      var html='';
+      if(!d.total){{html='<span style="color:#444;font-size:11px">No new items found.</span>';}}
+      else{{
+        html='<div style="font-size:11px;color:#446677;margin-bottom:6px">'+d.total+' items found across '+d.feeds.length+' feed(s)</div>';
+        d.items.slice(0,8).forEach(function(item){{
+          html+='<div style="border-left:2px solid #1a3a4a;padding:4px 10px;margin-bottom:6px">'
+            +'<a href="'+item.url+'" target="_blank" rel="noopener" style="color:#ccc;font-size:12px">'+item.title+'</a>'
+            +(item.published?'<span style="color:#333;font-size:10px;margin-left:8px">'+item.published+'</span>':'')
+            +(item.summary?'<div style="color:#555;font-size:11px;margin-top:2px">'+item.summary.slice(0,160)+'…</div>':'')
+            +'</div>';
+        }});
+      }}
+      res.innerHTML=html;
+      if(btn)btn.textContent='📡 Check Now';
+    }})
+    .catch(function(){{res.innerHTML='<span style="color:#ff6b6b;font-size:11px">Request failed.</span>';if(btn)btn.textContent='📡 Check Now';}});
+}}
 </script>"""
     return _page(note.name, f'<h1>{_html.escape(note.name)}</h1>{actions}{meta}{content_section}', "vault")
 
@@ -2135,6 +2214,227 @@ def trigger_run():
 
     threading.Thread(target=_do, daemon=True).start()
     return RedirectResponse("/", status_code=303)
+
+
+# ── Feed check API ─────────────────────────────────────────────────────────────
+
+@app.get("/api/feeds/check/{slug}")
+def api_feeds_check(slug: str):
+    """Fetch all RSS/Atom feeds for a note and return recent items as JSON."""
+    note = _vault.read_note(slug)
+    if not note:
+        return JSONResponse({"error": "Note not found"}, status_code=404)
+    feeds = getattr(note, "feeds", []) or []
+    if not feeds:
+        return JSONResponse({"feeds": [], "items": [], "total": 0})
+    try:
+        from rss import fetch_feed, fetch_new_items
+        result = []
+        all_items = []
+        for feed_url in feeds:
+            feed_url = feed_url.strip()
+            if not feed_url:
+                continue
+            items = fetch_feed(feed_url)
+            result.append({"url": feed_url, "item_count": len(items), "ok": len(items) > 0})
+            for item in items[:10]:
+                all_items.append({
+                    "title": item.title, "url": item.url,
+                    "summary": item.summary[:200] if item.summary else "",
+                    "published": item.published or "",
+                    "feed_url": item.feed_url,
+                })
+        all_items.sort(key=lambda x: x.get("published", ""), reverse=True)
+        return JSONResponse({"feeds": result, "items": all_items[:20], "total": len(all_items)})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Dead link scanner ──────────────────────────────────────────────────────────
+
+@app.get("/api/deadlinks")
+def api_deadlinks_status():
+    return JSONResponse(_dead_links)
+
+
+@app.post("/api/deadlinks/scan")
+def api_deadlinks_scan():
+    global _dead_scan_running
+    with _dead_scan_lock:
+        if _dead_scan_running:
+            return JSONResponse({"status": "already_running"})
+        _dead_scan_running = True
+
+    def _do_scan():
+        global _dead_scan_running, _dead_links
+        import requests as _req
+        import sqlite3 as _sq
+        try:
+            db_path = cfg.get("memory.db_path", "data/memory.db")
+            conn = _sq.connect(db_path)
+            urls = [r[0] for r in conn.execute("SELECT url FROM sources").fetchall()]
+            conn.close()
+        except Exception:
+            urls = []
+        results = {}
+        for url in urls:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            try:
+                resp = _req.head(url, timeout=8, allow_redirects=True,
+                                 headers={"User-Agent": "Mozilla/5.0 (compatible; phantom-deadlink-scanner/1.0)"})
+                code = resp.status_code
+                if code == 405:  # HEAD not allowed — try GET
+                    resp = _req.get(url, timeout=8, stream=True,
+                                    headers={"User-Agent": "Mozilla/5.0"})
+                    code = resp.status_code
+                    resp.close()
+                status = "ok" if code < 400 else "dead"
+                results[url] = {"status": status, "code": code, "checked_at": now}
+            except _req.exceptions.Timeout:
+                results[url] = {"status": "timeout", "code": 0, "checked_at": now}
+            except Exception as e:
+                results[url] = {"status": "error", "code": 0, "checked_at": now, "error": str(e)[:80]}
+        with _dead_scan_lock:
+            _dead_links.update(results)
+            _dead_scan_running = False
+
+    threading.Thread(target=_do_scan, daemon=True).start()
+    return JSONResponse({"status": "started", "count": 0})
+
+
+# ── Knowledge gaps page ────────────────────────────────────────────────────────
+
+@app.get("/gaps", response_class=HTMLResponse)
+def gaps_page():
+    notes = _topics.list_topics()
+    slug_set = {n.slug for n in notes}
+
+    # ── 1. Depth-0 / never researched ─────────────────────────────────────────
+    never_run = [n for n in notes if n.research_depth == 0 or not n.last_researched]
+    never_run.sort(key=lambda n: ({"high": 0, "medium": 1, "low": 2}.get(n.priority, 1), n.created or ""))
+
+    # ── 2. Orphan notes (no backlinks) ────────────────────────────────────────
+    orphans = []
+    for n in notes:
+        # Backlinks are stored in the note body as a section — check vault for who links to this slug
+        backlinked_by = []
+        for other in notes:
+            if other.slug == n.slug:
+                continue
+            if n.name and n.name.lower() in (other.body or "").lower():
+                backlinked_by.append(other)
+        if not backlinked_by and not n.forward_links:
+            orphans.append(n)
+    orphans.sort(key=lambda n: n.created or "")
+
+    # ── 3. Frontier topics (referenced WikiLinks with no note) ─────────────────
+    frontier = []
+    for n in notes:
+        for link_name in (n.forward_links or []):
+            link_slug = _vault.name_to_slug(link_name)
+            if link_slug not in slug_set:
+                frontier.append({"name": link_name, "slug": link_slug, "referenced_by": n.name, "ref_slug": n.slug})
+    # Deduplicate by slug, keep first reference
+    seen_frontier = {}
+    for f in frontier:
+        if f["slug"] not in seen_frontier:
+            seen_frontier[f["slug"]] = f
+    frontier = sorted(seen_frontier.values(), key=lambda x: x["name"])
+
+    # ── 4. Tag coverage gaps (tags on only one note) ───────────────────────────
+    tag_counts: dict = {}
+    for n in notes:
+        for t in (n.tags or []):
+            if t:
+                tag_counts[t] = tag_counts.get(t, 0) + 1
+    singleton_tags = sorted([t for t, c in tag_counts.items() if c == 1])
+    well_covered = sorted([(t, c) for t, c in tag_counts.items() if c >= 3], key=lambda x: -x[1])[:10]
+
+    # ── Build HTML ──────────────────────────────────────────────────────────────
+    def _never_run_rows():
+        if not never_run:
+            return '<div class="empty" style="padding:20px">All topics have been researched at least once.</div>'
+        rows = []
+        for n in never_run[:30]:
+            pri_col = {"high": "#ff6b6b", "medium": "#ffd93d", "low": "#555"}.get(n.priority, "#555")
+            rows.append(
+                f'<tr>'
+                f'<td><a href="/vault/{n.slug}" style="color:#ccc">{_html.escape(n.name)}</a></td>'
+                f'<td><span style="color:{pri_col}">{n.priority}</span></td>'
+                f'<td style="color:#555">{n.type}</td>'
+                f'<td style="color:#444">{(n.created or "")[:10]}</td>'
+                f'<td><form method="post" action="/topics/{n.slug}/research" style="margin:0">'
+                f'<button class="btn-sm btn-green">▶ Run</button></form></td>'
+                f'</tr>'
+            )
+        return '<div class="table-wrap"><table><thead><tr><th>Topic</th><th>Priority</th><th>Type</th><th>Created</th><th></th></tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>'
+
+    def _orphan_rows():
+        if not orphans:
+            return '<div class="empty" style="padding:20px">No isolated notes found.</div>'
+        rows = []
+        for n in orphans[:20]:
+            rows.append(
+                f'<tr>'
+                f'<td><a href="/vault/{n.slug}" style="color:#ccc">{_html.escape(n.name)}</a></td>'
+                f'<td style="color:#555">{n.type}</td>'
+                f'<td style="color:#444">depth {n.research_depth}</td>'
+                f'<td style="color:#333">{(n.last_researched or "never")[:10]}</td>'
+                f'</tr>'
+            )
+        return '<div class="table-wrap"><table><thead><tr><th>Topic</th><th>Type</th><th>Depth</th><th>Last Run</th></tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>'
+
+    def _frontier_rows():
+        if not frontier:
+            return '<div class="empty" style="padding:20px">No frontier topics — all referenced links exist.</div>'
+        rows = []
+        for f in frontier[:40]:
+            rows.append(
+                f'<tr>'
+                f'<td><a href="/vault/{f["slug"]}" style="color:#446677">{_html.escape(f["name"])}</a></td>'
+                f'<td><a href="/vault/{f["ref_slug"]}" style="color:#446;font-size:11px">{_html.escape(f["referenced_by"])}</a></td>'
+                f'<td><form method="post" action="/topics/new" style="margin:0">'
+                f'<input type="hidden" name="name" value="{_html.escape(f["name"])}">'
+                f'<input type="hidden" name="type" value="research">'
+                f'<input type="hidden" name="priority" value="low">'
+                f'<button class="btn-sm">+ Queue</button></form></td>'
+                f'</tr>'
+            )
+        return '<div class="table-wrap"><table><thead><tr><th>Frontier Topic</th><th>Referenced By</th><th></th></tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>'
+
+    def _tag_html():
+        if not tag_counts:
+            return '<div class="empty" style="padding:20px">No tags found.</div>'
+        parts = []
+        for t, c in sorted(tag_counts.items(), key=lambda x: -x[1]):
+            opacity = max(0.25, min(1.0, 0.3 + c * 0.15))
+            col = f"hsla(200,70%,60%,{opacity:.2f})"
+            parts.append(f'<span style="background:#0d1a22;color:{col};padding:3px 9px;border-radius:12px;font-size:11px;border:1px solid {col}33">{_html.escape(t)} <span style="opacity:0.5">×{c}</span></span>')
+        return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">' + "".join(parts) + '</div>'
+
+    stats_html = (
+        '<div class="stats">'
+        f'<div class="stat-card"><div class="stat-num" style="color:#ff6b6b">{len(never_run)}</div><div class="stat-lbl">Unresearched</div></div>'
+        f'<div class="stat-card"><div class="stat-num" style="color:#ffd93d">{len(orphans)}</div><div class="stat-lbl">Orphans</div></div>'
+        f'<div class="stat-card"><div class="stat-num" style="color:#446677">{len(frontier)}</div><div class="stat-lbl">Frontier</div></div>'
+        f'<div class="stat-card"><div class="stat-num" style="color:#555">{len(singleton_tags)}</div><div class="stat-lbl">Singleton Tags</div></div>'
+        f'<div class="stat-card"><div class="stat-num">{len(notes)}</div><div class="stat-lbl">Total Notes</div></div>'
+        '</div>'
+    )
+
+    body = (
+        '<h1>Knowledge Gaps</h1>'
+        + stats_html
+        + '<h2>Unresearched Topics <span style="color:#333;font-size:12px">— depth 0 or never run</span></h2>'
+        + _never_run_rows()
+        + '<h2 style="margin-top:28px">Isolated Notes <span style="color:#333;font-size:12px">— no links in or out</span></h2>'
+        + _orphan_rows()
+        + '<h2 style="margin-top:28px">Frontier Nodes <span style="color:#333;font-size:12px">— referenced but not created</span></h2>'
+        + _frontier_rows()
+        + '<h2 style="margin-top:28px">Tag Coverage</h2>'
+        + _tag_html()
+    )
+    return _page("Gaps", body, "gaps")
 
 
 # ── Graph API ──────────────────────────────────────────────────────────────────
