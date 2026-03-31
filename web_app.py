@@ -57,6 +57,12 @@ _dead_scan_running: bool = False
 _dead_scan_lock = threading.Lock()
 
 
+def _url_msg(s: str) -> str:
+    """URL-encode a toast message string (spaces → +, minimal escaping)."""
+    from urllib.parse import quote_plus
+    return quote_plus(s[:120])
+
+
 def _broadcast(msg: str):
     with _sse_lock:
         dead = []
@@ -266,7 +272,7 @@ h2{
   border-bottom:1px solid var(--accent-border);
   display:flex;align-items:center;gap:8px;
 }
-h2 .h2-count{color:#444;font-size:10px; font-weight: normal;}
+h2 .h2-count{color:#888;font-size:10px; font-weight: normal;}
 
 /* ── Stat cards ── */
 .stats{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}
@@ -277,7 +283,7 @@ h2 .h2-count{color:#444;font-size:10px; font-weight: normal;}
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 .stat:hover{border-color:var(--accent); transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);}
-.stat .lbl{color:#555;font-size:10px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
+.stat .lbl{color:#999;font-size:10px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
 .stat .val{color:var(--accent);font-size:24px;font-weight:bold;line-height:1; text-shadow: 0 0 10px rgba(var(--accent-h), 68%, 62%, 0.2);}
 
 /* ── Active panel ── */
@@ -302,11 +308,11 @@ h2 .h2-count{color:#444;font-size:10px; font-weight: normal;}
   background: #0d0d0d;
   border: 1px solid #1a1a1a;
   border-radius: 6px;
-  overflow: hidden;
+  overflow-x: auto;
   margin-bottom: 20px;
 }
 table{width:100%;border-collapse:collapse;}
-th{text-align:left;color:#555;font-size:10px;text-transform:uppercase;letter-spacing:.1em;padding:10px 12px;background:#111;border-bottom:1px solid #1c1c1c}
+th{text-align:left;color:#999;font-size:10px;text-transform:uppercase;letter-spacing:.1em;padding:10px 12px;background:#111;border-bottom:1px solid #1c1c1c}
 td{padding:10px 12px;border-bottom:1px solid #131313;vertical-align:middle; color: #aaa;}
 tr:last-child td { border-bottom: none; }
 tr:hover td{background:#121212; color: #fff;}
@@ -314,7 +320,7 @@ tr:hover td{background:#121212; color: #fff;}
 /* ── Controls ── */
 .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
 .btn-group { display: flex; flex-direction: column; gap: 4px; }
-.btn-desc { font-size: 9px; color: #444; padding-left: 2px; max-width: 140px; line-height: 1.2; }
+.btn-desc { font-size: 9px; color: #888; padding-left: 2px; max-width: 140px; line-height: 1.2; }
 
 /* ── Log event colors (static log + live feed share these classes) ── */
 .lc-run    {color:var(--accent);font-weight:bold}
@@ -397,12 +403,13 @@ nav{
   align-items:center;
 }
 nav a{
-  color:#666;font-size:12px;
+  color:#888;font-size:12px;
   padding:4px 14px;
   border-right:1px solid #1a1a1a;
 }
 nav a:first-child{padding-left:0}
-nav a.active,nav a:hover{color:#fff;text-decoration:none}
+nav a:hover{color:#fff;text-decoration:none;background:rgba(255,255,255,0.04)}
+nav a.active{color:#fff;text-decoration:none;background:rgba(255,255,255,0.04);border-bottom:2px solid var(--accent)}
 .live-dot{
   width:8px;height:8px;border-radius:50%;
   background:#252525;
@@ -419,7 +426,7 @@ nav a.active,nav a:hover{color:#fff;text-decoration:none}
 .b-low     {background:#0c1c0c;color:#6bcb77}
 .b-queued  {background:var(--accent-bg);color:var(--accent)}
 .b-active  {background:#0c1c0c;color:#6bcb77}
-.b-archived{background:#141414;color:#444}
+.b-archived{background:#141414;color:#777}
 
 /* ── Buttons ── */
 form{display:inline}
@@ -431,23 +438,23 @@ button,input[type=submit]{
   transition:background .15s,border-color .15s;
 }
 button:hover,input[type=submit]:hover{background:var(--accent-bg);border-color:var(--accent-dim)}
-.btn-sm{padding:2px 7px;font-size:10px}
+.btn-sm{padding:5px 10px;font-size:11px}
 .btn-danger{background:#180a0a;color:#ff6b6b;border-color:#360e0e}
 .btn-danger:hover{background:#280c0c}
 .btn-green{background:#0c1a0c;color:#6bcb77;border-color:#1a3e1a}
 .btn-green:hover{background:#122212}
-.btn-dim{background:#111;color:#666;border-color:#1e1e1e}
-.btn-dim:hover{background:#171717;color:#999}
+.btn-dim{background:#111;color:#888;border-color:#1e1e1e}
+.btn-dim:hover{background:#171717;color:#bbb}
 
 /* ── Inputs ── */
 input[type=text],select,textarea{
   background:#111;color:#ccc;border:1px solid #222;
   padding:5px 9px;font-family:inherit;font-size:12px;border-radius:3px;
 }
-input[type=text]:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent-dim)}
+input[type=text]:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent-dim);box-shadow:0 0 0 1px var(--accent-dim)}
 textarea{width:100%;min-height:300px;resize:vertical;line-height:1.5}
 .row{display:flex;gap:10px;align-items:center;margin-bottom:9px;flex-wrap:wrap}
-.row label{color:#666;min-width:65px;font-size:12px}
+.row label{color:#888;min-width:65px;font-size:12px}
 details summary{cursor:pointer;color:var(--accent);padding:4px 0;user-select:none;font-size:12px}
 
 /* ── Misc ── */
@@ -456,17 +463,17 @@ pre{
   border:1px solid #181818;white-space:pre-wrap;word-break:break-word;
   line-height:1.5;max-height:480px;overflow-y:auto;font-size:12px;
 }
-.tag{display:inline-block;background:#141414;color:#555;padding:1px 5px;border-radius:3px;font-size:10px;margin:1px}
+.tag{display:inline-block;background:#141414;color:#999;padding:1px 5px;border-radius:3px;font-size:10px;margin:1px}
 .alert{padding:8px 13px;border-radius:4px;margin-bottom:12px;border:1px solid}
 .alert-info {background:var(--accent-bg);border-color:var(--accent-border);color:var(--accent)}
 .alert-ok   {background:#0c1a0c;border-color:#1c421c;color:#6bcb77}
 .alert-warn {background:#1c1a08;border-color:#484620;color:#ffd93d}
-.empty{color:#2e2e2e;font-style:italic;padding:12px 0;font-size:12px}
+.empty{color:#999;font-style:italic;padding:12px 0;font-size:12px}
 .meta-grid{
   background:#0f0f0f;border:1px solid #1c1c1c;padding:12px;border-radius:4px;
   margin-bottom:14px;display:grid;grid-template_columns:1fr 1fr;gap:6px 18px;
 }
-.meta-grid .lbl{color:#444}
+.meta-grid .lbl{color:#888}
 
 /* ── Depth overview ── */
 .depth-overview{
@@ -474,10 +481,10 @@ pre{
   padding:10px 14px;margin-bottom:14px;
 }
 .depth-row{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11px}
-.depth-row .dlbl{color:#555;width:52px;flex-shrink:0}
+.depth-row .dlbl{color:#999;width:52px;flex-shrink:0}
 .depth-bar-fill{height:6px;border-radius:3px;background:var(--accent-dim);min-width:2px;transition:width .4s}
 .depth-bar-fill.deep-fill{background:#ffd93d}
-.depth-row .dcount{color:#555;font-size:10px;min-width:20px;text-align:right}
+.depth-row .dcount{color:#999;font-size:10px;min-width:20px;text-align:right}
 
 /* ── Log colors ── */
 .lc-run       {color:var(--accent)}
@@ -520,7 +527,7 @@ pre{
 #graph-canvas{display:block;background:#0a0a0a;border:1px solid #1a1a1a;border-radius:6px;cursor:grab}
 #graph-canvas:active{cursor:grabbing}
 .graph-legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11px}
-.legend-item{display:flex;align-items:center;gap:5px;color:#666}
+.legend-item{display:flex;align-items:center;gap:5px;color:#888}
 .legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 #graph-tooltip{
   position:fixed;pointer-events:none;display:none;
@@ -530,7 +537,31 @@ pre{
 }
 #graph-info{
   background:#0f0f0f;border:1px solid #1c1c1c;border-radius:4px;
-  padding:12px 16px;margin-top:12px;min-height:50px;font-size:12px;color:#888;
+  padding:12px 16px;margin-top:12px;min-height:50px;font-size:12px;color:#aaa;
+}
+
+/* ── Responsive ── */
+@media(max-width:900px){
+  .container{padding:12px 14px}
+  nav{flex-wrap:wrap;gap:2px}
+  nav a{padding:6px 10px;font-size:11px}
+  .stats{gap:8px}
+  .stat{min-width:70px;padding:8px 10px}
+  h1{font-size:16px}
+  table{font-size:11px}
+  td,th{padding:8px 6px}
+  .btn-sm{padding:4px 10px;font-size:10px}
+  .meta-grid{grid-template-columns:1fr}
+  .banner{font-size:10px}
+}
+@media(max-width:600px){
+  .container{padding:10px 8px}
+  nav a{padding:5px 7px;font-size:10px;border-right:none}
+  .stat .val{font-size:18px}
+  .stats{flex-direction:column}
+  .banner-wrap{padding:10px 12px 8px}
+  .banner{font-size:7px}
+  textarea{min-height:200px}
 }
 </style>"""
 
@@ -573,7 +604,7 @@ def _depth_bar(depth: int) -> str:
         f'<span class="depth-pip {"filled" if i < depth and depth < 3 else "deep" if i < depth else ""}" title="depth {depth}"></span>'
         for i in range(MAX)
     )
-    lbl = f'<span style="color:#444;font-size:10px;margin-left:4px">{depth}</span>'
+    lbl = f'<span style="color:#888;font-size:10px;margin-left:4px">{depth}</span>'
     return f'<span class="depth-bar">{pips}</span>{lbl}'
 
 
@@ -905,15 +936,53 @@ _AUTO_REFRESH_JS = """<script>
 })();
 </script>"""
 
+_TOAST_JS = """<script>
+(function(){
+  var p=new URLSearchParams(window.location.search);
+  var msg=p.get('msg');
+  if(!msg)return;
+  msg=decodeURIComponent(msg.replace(/\+/g,' '));
+  var isErr=msg.toLowerCase().indexOf('error')>=0||msg.toLowerCase().indexOf('fail')>=0;
+  var t=document.createElement('div');
+  t.textContent=msg;
+  t.style.cssText='position:fixed;top:18px;right:18px;z-index:9999;'
+    +'background:#111;border:1px solid '+(isErr?'#360e0e':'#1a3e1a')+';'
+    +'color:'+(isErr?'#ff6b6b':'#6bcb77')+';'
+    +'padding:10px 20px;border-radius:6px;font-family:inherit;font-size:12px;'
+    +'box-shadow:0 4px 20px rgba(0,0,0,0.6);opacity:0;transition:opacity .25s;'
+    +'max-width:340px;pointer-events:none;line-height:1.4;';
+  document.body.appendChild(t);
+  requestAnimationFrame(function(){t.style.opacity='1';});
+  setTimeout(function(){t.style.opacity='0';setTimeout(function(){if(t.parentNode)t.remove();},300);},3500);
+  var u=new URL(location);u.searchParams.delete('msg');
+  history.replaceState(null,'',u);
+})();
+</script>"""
 
-def _page(title: str, body: str, active: str = "") -> HTMLResponse:
+_FORM_FEEDBACK_JS = """<script>
+document.addEventListener('submit',function(e){
+  var btn=e.target.querySelector('button:not([type=button]):not(.btn-noload),input[type=submit]');
+  if(btn){
+    setTimeout(function(){
+      btn.disabled=true;
+      if(!btn.dataset.orig)btn.dataset.orig=btn.textContent;
+      btn.textContent='Working\u2026';
+      btn.style.opacity='0.55';
+    },0);
+  }
+});
+</script>"""
+
+
+def _page(title: str, body: str, active: str = "", no_refresh: bool = False) -> HTMLResponse:
+    refresh_js = "" if no_refresh else _AUTO_REFRESH_JS
     return HTMLResponse(
         f'<!DOCTYPE html><html><head>'
         f'<meta charset="utf-8"><meta name="viewport" content="width=device-width">'
         f'<meta name="theme-color" content="#0b0b10">'
         f'<title>{_html.escape(title)} — Phantom</title>'
         f'{_CSS}</head>'
-        f'<body>{_ACCENT_JS}{_TAB_JS}{_AUTO_REFRESH_JS}{_nav(active)}'
+        f'<body>{_ACCENT_JS}{_TAB_JS}{refresh_js}{_TOAST_JS}{_FORM_FEEDBACK_JS}{_nav(active)}'
         f'<div class="container">{body}</div></body></html>'
     )
 
@@ -1061,9 +1130,9 @@ def dashboard():
             f'<td><a href="/vault/{n.slug}">{indicator}{_html.escape(n.name)}</a></td>'
             f'<td>{_badge(n.status)}</td>'
             f'<td>{_badge(n.priority)}</td>'
-            f'<td style="color:#555">{n.type}</td>'
+            f'<td style="color:#999">{n.type}</td>'
             f'<td>{_depth_bar(n.research_depth)}</td>'
-            f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:16]}</td>'
+            f'<td style="color:#888;font-size:11px">{str(n.last_researched or "never")[:16]}</td>'
             f'<td>'
             f'<form method="post" action="/topics/{n.slug}/research" style="display:inline">'
             f'<button class="btn-sm btn-green" title="Research now">▶</button></form>'
@@ -1082,9 +1151,9 @@ def dashboard():
         f'<td><a href="/vault/{n.slug}">{_html.escape(n.name)}</a></td>'
         f'<td>{_badge(n.status)}</td>'
         f'<td>{_badge(n.priority)}</td>'
-        f'<td style="color:#555">{n.type}</td>'
+        f'<td style="color:#999">{n.type}</td>'
         f'<td>{_depth_bar(n.research_depth)}</td>'
-        f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:16]}</td>'
+        f'<td style="color:#888;font-size:11px">{str(n.last_researched or "never")[:16]}</td>'
         f'<td>'
         f'<form method="post" action="/topics/{n.slug}/queue" style="display:inline">'
         f'<button class="btn-sm" title="Unarchive">↺</button></form>'
@@ -1096,8 +1165,8 @@ def dashboard():
     queue_section = (
         f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">'
         f'<h2 style="margin:0">Active Research Topics <span class="h2-count">{len(non_arch)}</span></h2>'
-        f'<label style="font-size:11px;color:#333;display:flex;align-items:center;gap:5px;cursor:pointer;margin-left:auto">'
-        f'<input type="checkbox" id="show-archived" onchange="toggleArchived(this.checked)" style="accent-color:#555">'
+        f'<label style="font-size:11px;color:#777;display:flex;align-items:center;gap:5px;cursor:pointer;margin-left:auto">'
+        f'<input type="checkbox" id="show-archived" onchange="toggleArchived(this.checked)" style="accent-color:#999">'
         f'Show {arch_ct} archived</label>'
         f'</div>'
         f'<div class="table-wrap"><table><thead><tr>'
@@ -1132,11 +1201,11 @@ def dashboard():
         )
     depth_overview = (
         f'<div class="depth-overview">'
-        f'<div style="color:#555;font-size:9px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">'
+        f'<div style="color:#999;font-size:9px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">'
         f'Knowledge Depth Distribution &nbsp;<span style="color:var(--accent)">avg {avg_depth}</span>'
         f'</div>'
         f'{depth_rows_html}'
-        f'<div style="color:#333;font-size:10px;margin-top:6px">'
+        f'<div style="color:#777;font-size:10px;margin-top:6px">'
         f'{total_links} connections &nbsp;|&nbsp; {len(non_arch)} active topics</div>'
         f'</div>'
     )
@@ -1386,7 +1455,7 @@ def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
         f'<select name="topic" onchange="this.form.submit()">{topic_opts}</select>'
         f'<select name="cred" onchange="this.form.submit()">{cred_opts}</select>'
         f'<select name="sort" onchange="this.form.submit()">{sort_opts}</select>'
-        f'<a href="/sources" style="font-size:11px;color:#444;margin-left:4px">reset</a>'
+        f'<a href="/sources" style="font-size:11px;color:#888;margin-left:4px">reset</a>'
         f'</form>'
     )
 
@@ -1432,7 +1501,7 @@ def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
         f'<td style="color:#999;font-size:11px">{_html.escape(r["domain"] or "")}</td>'
         f'<td>{_cred_badge(r)}</td>'
         f'<td style="text-align:center;color:var(--accent)">{r["fetch_count"]}</td>'
-        f'<td style="color:#444;font-size:11px">{str(r.get("last_fetched",""))[:16]}</td>'
+        f'<td style="color:#888;font-size:11px">{str(r.get("last_fetched",""))[:16]}</td>'
         f'<td>{_change_badge(r)}</td>'
         f'<td>{_dead_badge(r)}</td>'
         f'<td><a href="/vault/{_html.escape(r["topic_slug"] or "")}" '
@@ -1451,7 +1520,7 @@ def sources_page(sort: str = "fetch_count", topic: str = "", cred: str = ""):
 
     body = (
         f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">'
-        f'<h1 style="margin:0">Sources <span style="color:#333;font-size:13px">audit log</span></h1>'
+        f'<h1 style="margin:0">Sources <span style="color:#777;font-size:13px">audit log</span></h1>'
         f'{scan_btn}</div>'
         + stats_html + filter_bar
         + '<div class="table-wrap"><table><thead><tr>'
@@ -1494,7 +1563,7 @@ def vault_search(q: str = ""):
     if q.strip() and not results:
         result_html = '<div class="empty" style="padding:40px 0;text-align:center">No results found for <strong>' + _html.escape(q) + '</strong></div>'
     elif results:
-        result_html = f'<div style="color:#444;font-size:11px;margin-bottom:16px">{len(results)} result{"s" if len(results)!=1 else ""} for <span style="color:#ccc">"{_html.escape(q)}"</span></div>'
+        result_html = f'<div style="color:#888;font-size:11px;margin-bottom:16px">{len(results)} result{"s" if len(results)!=1 else ""} for <span style="color:#ccc">"{_html.escape(q)}"</span></div>'
         for r in results:
             n = r["note"]
             snap_count = _memory.get_note_snapshot_count(n.slug)
@@ -1502,9 +1571,9 @@ def vault_search(q: str = ""):
                 f'<div style="border:1px solid #1a1a1a;border-radius:4px;padding:14px 16px;margin-bottom:10px;background:#0d0d0d">'
                 f'<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">'
                 f'<a href="/vault/{n.slug}" style="color:#fff;font-size:14px;font-weight:bold">{_html.escape(n.name)}</a>'
-                f'<span style="color:#444;font-size:10px">{n.type}</span>'
+                f'<span style="color:#888;font-size:10px">{n.type}</span>'
                 f'{_badge(n.priority)}'
-                f'<span style="margin-left:auto;color:#333;font-size:10px">depth {n.research_depth} · {snap_count} run{"s" if snap_count!=1 else ""}</span>'
+                f'<span style="margin-left:auto;color:#777;font-size:10px">depth {n.research_depth} · {snap_count} run{"s" if snap_count!=1 else ""}</span>'
                 f'</div>'
                 f'<div style="color:#666;font-size:12px;line-height:1.6">{r["excerpt"]}</div>'
                 f'</div>'
@@ -1546,7 +1615,7 @@ def note_history(slug: str):
         new_lines = new_text.splitlines(keepends=True)
         diff = list(difflib.unified_diff(old_lines, new_lines, lineterm="", n=2))
         if not diff:
-            return '<div style="color:#333;font-size:11px;padding:8px">No textual changes detected.</div>'
+            return '<div style="color:#777;font-size:11px;padding:8px">No textual changes detected.</div>'
         html_lines = []
         for line in diff[3:]:  # skip @@-header lines
             if line.startswith("@@"):
@@ -1556,7 +1625,7 @@ def note_history(slug: str):
             elif line.startswith("-"):
                 html_lines.append(f'<div style="background:#1a0a0a;color:#ff6b6b;padding:1px 6px">{_html.escape(line)}</div>')
             else:
-                html_lines.append(f'<div style="color:#444;padding:1px 6px">{_html.escape(line)}</div>')
+                html_lines.append(f'<div style="color:#888;padding:1px 6px">{_html.escape(line)}</div>')
         return "".join(html_lines)
 
     # Build timeline: current vs each snapshot, and snapshots vs each other
@@ -1580,11 +1649,11 @@ def note_history(slug: str):
             f'<div style="border:1px solid #1a1a2a;border-radius:4px;margin-bottom:18px;overflow:hidden">'
             f'<div style="background:#0d0d12;padding:10px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #1a1a2a">'
             f'<span style="color:#a78bfa;font-weight:bold">{newer["label"]}</span>'
-            f'<span style="color:#333">→</span>'
-            f'<span style="color:#555">{older["label"]}</span>'
-            f'<span style="color:#444;font-size:10px">{older["saved_at"]}</span>'
+            f'<span style="color:#777">→</span>'
+            f'<span style="color:#999">{older["label"]}</span>'
+            f'<span style="color:#888;font-size:10px">{older["saved_at"]}</span>'
             f'<span style="margin-left:auto;color:{delta_col};font-size:11px">{delta_str}</span>'
-            f'<span style="color:#333;font-size:10px">depth {older["depth"]} → {newer["depth"]}</span>'
+            f'<span style="color:#777;font-size:10px">depth {older["depth"]} → {newer["depth"]}</span>'
             f'</div>'
             f'<div style="font-family:monospace;font-size:11px;line-height:1.5;max-height:400px;overflow-y:auto">'
             f'{_diff_html(older["body"], newer["body"])}'
@@ -1594,10 +1663,10 @@ def note_history(slug: str):
     body = (
         f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">'
         f'<h1 style="margin:0">History: {_html.escape(note.name)}</h1>'
-        f'<span style="color:#333">{len(snapshots)} snapshot{"s" if len(snapshots)!=1 else ""}</span>'
+        f'<span style="color:#777">{len(snapshots)} snapshot{"s" if len(snapshots)!=1 else ""}</span>'
         f'<a href="/vault/{slug}" style="margin-left:auto"><button class="btn-dim">← Back to Note</button></a>'
         f'</div>'
-        f'<div style="color:#444;font-size:11px;margin-bottom:20px">'
+        f'<div style="color:#888;font-size:11px;margin-bottom:20px">'
         f'Green = added &nbsp;·&nbsp; Red = removed &nbsp;·&nbsp; Showing {len(sections)} diff{"s" if len(sections)!=1 else ""}'
         f'</div>'
         + "".join(sections)
@@ -1620,18 +1689,29 @@ def settings_page():
     except Exception:
         agents_raw = "{}"
 
+    validate_js = """<script>
+function validateSettings(f){
+  try{JSON.parse(f.config.value);}
+  catch(e){alert('Config JSON is invalid:\\n'+e.message);return false;}
+  try{JSON.parse(f.agents.value);}
+  catch(e){alert('Agents JSON is invalid:\\n'+e.message);return false;}
+  return true;
+}
+</script>"""
     form = (
-        f'<form method="post" action="/settings/save">'
-        f'<h2>System Configuration (config.json)</h2>'
-        f'<textarea name="config" style="height:300px;font-family:monospace">{_html.escape(config_raw)}</textarea>'
-        f'<h2 style="margin-top:24px">Agent Roster (agents.json)</h2>'
-        f'<textarea name="agents" style="height:300px;font-family:monospace">{_html.escape(agents_raw)}</textarea>'
-        f'<div style="margin-top:20px">'
-        f'<button type="submit" class="btn-green">✔ Save All Settings</button>'
-        f'</div>'
-        f'</form>'
+        validate_js
+        + f'<form method="post" action="/settings/save" onsubmit="return validateSettings(this)">'
+        + f'<h2>System Configuration (config.json)</h2>'
+        + f'<textarea name="config" style="height:300px;font-family:monospace">{_html.escape(config_raw)}</textarea>'
+        + f'<h2 style="margin-top:24px">Agent Roster (agents.json)</h2>'
+        + f'<textarea name="agents" style="height:300px;font-family:monospace">{_html.escape(agents_raw)}</textarea>'
+        + f'<div style="margin-top:20px">'
+        + f'<button type="submit" class="btn-green">✔ Save All Settings</button>'
+        + f'</div>'
+        + f'</form>'
     )
-    return _page("Settings", f'<h1>System Settings</h1>{form}', "settings")
+    back = '<a href="/" style="color:#888;font-size:11px;display:inline-block;margin-bottom:12px">&larr; Dashboard</a>'
+    return _page("Settings", f'{back}<h1>System Settings</h1>{form}', "settings", no_refresh=True)
 
 
 @app.post("/settings/save")
@@ -1646,22 +1726,23 @@ async def settings_save(request: Request):
         json.loads(agents_raw)
     except json.JSONDecodeError as e:
         _run_status["last"] = f"JSON Error: {e}"
-        return RedirectResponse("/settings", status_code=303)
+        return RedirectResponse(f"/settings?msg=Error:+invalid+JSON", status_code=303)
 
     try:
         with open("config.json", "w", encoding="utf-8") as f:
             f.write(config_raw)
         with open("agents.json", "w", encoding="utf-8") as f:
             f.write(agents_raw)
-        
+
         # Reload internal config
         cfg.reload()
-        
+
         _run_status["last"] = "Settings saved and reloaded."
     except Exception as e:
         _run_status["last"] = f"Save error: {e}"
+        return RedirectResponse(f"/settings?msg=Error:+{_url_msg(str(e))}", status_code=303)
 
-    return RedirectResponse("/settings", status_code=303)
+    return RedirectResponse("/settings?msg=Settings+saved+and+reloaded", status_code=303)
 
 
 # ── Vault list ─────────────────────────────────────────────────────────────────
@@ -1672,16 +1753,16 @@ def vault_list():
     rows  = "".join(
         f'<tr><td><a href="/vault/{n.slug}">{_html.escape(n.name)}</a></td>'
         f'<td>{_badge(n.status)}</td><td>{_badge(n.priority)}</td>'
-        f'<td style="color:#555">{n.type}</td>'
-        f'<td style="color:#484848">{str(n.last_researched or "never")[:16]}</td>'
+        f'<td style="color:#999">{n.type}</td>'
+        f'<td style="color:#888">{str(n.last_researched or "never")[:16]}</td>'
         f'<td>{_depth_bar(n.research_depth)}</td>'
         f'<td style="color:var(--accent)">{n.research_runs or ""}</td>'
-        f'<td style="color:#484848">{n.total_sources_fetched or ""}</td></tr>'
+        f'<td style="color:#888">{n.total_sources_fetched or ""}</td></tr>'
         for n in notes
     ) or '<tr><td colspan="8" class="empty">Vault is empty</td></tr>'
 
     body = (
-        f'<h1>Vault <span style="color:#444;font-size:13px">({len(notes)} notes)</span></h1>'
+        f'<h1>Vault <span style="color:#888;font-size:13px">({len(notes)} notes)</span></h1>'
         f'<table><thead><tr><th>Name</th><th>Status</th><th>Priority</th><th>Type</th>'
         f'<th>Last Researched</th><th>Depth</th><th>Runs</th><th>Sources</th></tr></thead>'
         f'<tbody>{rows}</tbody></table>'
@@ -1701,7 +1782,7 @@ def vault_note(slug: str):
             f'<div style="text-align:center;padding:60px 20px">'
             f'<div style="font-size:48px;margin-bottom:16px;opacity:0.3">◌</div>'
             f'<h2 style="color:#446677;margin-bottom:8px">{_html.escape(display_name)}</h2>'
-            f'<p style="color:#333;margin-bottom:24px">This topic has been referenced but not yet researched.</p>'
+            f'<p style="color:#777;margin-bottom:24px">This topic has been referenced but not yet researched.</p>'
             f'<form method="post" action="/topics/new" style="display:inline">'
             f'<input type="hidden" name="name" value="{_html.escape(display_name)}">'
             f'<input type="hidden" name="type" value="research">'
@@ -1714,14 +1795,14 @@ def vault_note(slug: str):
         return _page(f"Frontier: {display_name}", ghost_body, "vault")
 
     tags  = "".join(f'<span class="tag">{_html.escape(t)}</span>' for t in note.tags) \
-            or "<span style='color:#333'>none</span>"
+            or "<span style='color:#777'>none</span>"
     feed_list = note.feeds or []
     feeds = "".join(f'<span class="tag">{_html.escape(f)}</span>' for f in feed_list) \
-            or "<span style='color:#333'>none</span>"
+            or "<span style='color:#777'>none</span>"
     fwd   = ", ".join(
         f'<a href="/vault/{_vault.name_to_slug(l)}">{_html.escape(l)}</a>'
         for l in note.forward_links
-    ) or "<span style='color:#333'>none</span>"
+    ) or "<span style='color:#777'>none</span>"
 
     meta = (
         '<div class="meta-grid">'
@@ -1775,8 +1856,8 @@ def vault_note(slug: str):
                 rows.append(
                     f'<tr><td><a href="{url}" target="_blank" rel="noopener">{dom}</a></td>'
                     f'<td>{score_badge}</td>'
-                    f'<td style="color:#555">{cnt}×</td>'
-                    f'<td style="color:#444">{date}</td></tr>'
+                    f'<td style="color:#999">{cnt}×</td>'
+                    f'<td style="color:#888">{date}</td></tr>'
                 )
             sources_html = (
                 '<h2>Sources</h2>'
@@ -1812,20 +1893,20 @@ function checkFeeds(){{
   var res=document.getElementById('feed-results');
   if(btn)btn.textContent='📡 Checking…';
   res.style.display='';
-  res.innerHTML='<span style="color:#444;font-size:11px">Fetching feeds…</span>';
+  res.innerHTML='<span style="color:#888;font-size:11px">Fetching feeds…</span>';
   fetch('/api/feeds/check/{note.slug}')
     .then(function(r){{return r.json();}})
     .then(function(d){{
       if(d.error){{res.innerHTML='<span style="color:#ff6b6b;font-size:11px">Error: '+d.error+'</span>';if(btn)btn.textContent='📡 Check Now';return;}}
       var html='';
-      if(!d.total){{html='<span style="color:#444;font-size:11px">No new items found.</span>';}}
+      if(!d.total){{html='<span style="color:#888;font-size:11px">No new items found.</span>';}}
       else{{
         html='<div style="font-size:11px;color:#446677;margin-bottom:6px">'+d.total+' items found across '+d.feeds.length+' feed(s)</div>';
         d.items.slice(0,8).forEach(function(item){{
           html+='<div style="border-left:2px solid #1a3a4a;padding:4px 10px;margin-bottom:6px">'
             +'<a href="'+item.url+'" target="_blank" rel="noopener" style="color:#ccc;font-size:12px">'+item.title+'</a>'
-            +(item.published?'<span style="color:#333;font-size:10px;margin-left:8px">'+item.published+'</span>':'')
-            +(item.summary?'<div style="color:#555;font-size:11px;margin-top:2px">'+item.summary.slice(0,160)+'…</div>':'')
+            +(item.published?'<span style="color:#777;font-size:10px;margin-left:8px">'+item.published+'</span>':'')
+            +(item.summary?'<div style="color:#999;font-size:11px;margin-top:2px">'+item.summary.slice(0,160)+'…</div>':'')
             +'</div>';
         }});
       }}
@@ -1870,7 +1951,7 @@ def vault_note_edit(slug: str):
         f'</div>'
         f'</form>'
     )
-    return _page(f"Edit {note.name}", f'<h1>Edit: {_html.escape(note.name)}</h1>{form}', "vault")
+    return _page(f"Edit {note.name}", f'<h1>Edit: {_html.escape(note.name)}</h1>{form}', "vault", no_refresh=True)
 
 
 @app.post("/vault/{slug}/save")
@@ -1892,7 +1973,7 @@ async def vault_note_save(slug: str, request: Request):
     _vault.rebuild_backlinks()
     _run_status["last"] = f"Saved: {note.name}"
 
-    return RedirectResponse(f"/vault/{slug}", status_code=303)
+    return RedirectResponse(f"/vault/{slug}?msg=Note+saved", status_code=303)
 
 
 # ── Topics ─────────────────────────────────────────────────────────────────────
@@ -1910,9 +1991,9 @@ def topics_list(status: str = "all"):
     rows = "".join(
         f'<tr><td><a href="/vault/{n.slug}">{_html.escape(n.name)}</a></td>'
         f'<td>{_badge(n.status)}</td><td>{_badge(n.priority)}</td>'
-        f'<td style="color:#555">{n.type}</td>'
+        f'<td style="color:#999">{n.type}</td>'
         f'<td>{"".join(f"<span class=tag>{_html.escape(t)}</span>" for t in n.tags)}</td>'
-        f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:16]}</td>'
+        f'<td style="color:#888;font-size:11px">{str(n.last_researched or "never")[:16]}</td>'
         f'<td style="white-space:nowrap">'
         f'<form method="post" action="/topics/{n.slug}/research" style="display:inline">'
         f'<button class="btn-sm btn-green" title="Research now">▶</button></form> '
@@ -1940,8 +2021,8 @@ def topics_list(status: str = "all"):
         '</form></details>'
     )
     return _page("Topics", (
-        f'<h1>Topics <span style="color:#444;font-size:13px">({len(notes)})</span></h1>'
-        f'<div style="margin-bottom:10px;color:#555;font-size:11px">Filter: {filters}</div>'
+        f'<h1>Topics <span style="color:#888;font-size:13px">({len(notes)})</span></h1>'
+        f'<div style="margin-bottom:10px;color:#999;font-size:11px">Filter: {filters}</div>'
         f'<table><thead><tr><th>Name</th><th>Status</th><th>Priority</th><th>Type</th>'
         f'<th>Tags</th><th>Last Research</th><th></th></tr></thead>'
         f'<tbody>{rows}</tbody></table>{new_form}'
@@ -1963,20 +2044,21 @@ async def new_topic(request: Request):
         except ValueError:
             pass  # already exists — still redirect to its vault page
         dest = redirect or f"/vault/{slug}"
-        return RedirectResponse(dest, status_code=303)
-    return RedirectResponse("/topics", status_code=303)
+        sep = "&" if "?" in dest else "?"
+        return RedirectResponse(f"{dest}{sep}msg=Topic+created", status_code=303)
+    return RedirectResponse("/topics?msg=Error:+name+required", status_code=303)
 
 
 @app.post("/topics/{slug}/queue")
 def queue_topic(slug: str):
     _topics.update_status(slug, "queued")
-    return RedirectResponse(f"/vault/{slug}", status_code=303)
+    return RedirectResponse(f"/vault/{slug}?msg=Re-queued+for+research", status_code=303)
 
 
 @app.post("/topics/{slug}/archive")
 def archive_topic_route(slug: str):
     _topics.archive_topic(slug)
-    return RedirectResponse("/topics", status_code=303)
+    return RedirectResponse("/topics?msg=Topic+archived", status_code=303)
 
 
 # ── Memory ─────────────────────────────────────────────────────────────────────
@@ -1997,11 +2079,11 @@ def memory_page(q: str = ""):
     if q:
         results = _memory.hybrid_search(q, limit=20)
         rows = "".join(
-            f'<tr><td style="color:#444">{r["id"]}</td>'
+            f'<tr><td style="color:#888">{r["id"]}</td>'
             f'<td>{_html.escape(r["content"][:300])}'
-            f'{"<span style=color:#444;font-size:10px> [sim:" + str(round(r.get("semantic_score",0),2)) + "]</span>" if r.get("semantic_score") else ""}'
+            f'{"<span style=color:#888;font-size:10px> [sim:" + str(round(r.get("semantic_score",0),2)) + "]</span>" if r.get("semantic_score") else ""}'
             f'</td><td><span class="tag">{_html.escape(r.get("tags",""))}</span></td>'
-            f'<td style="color:#444;font-size:11px">{(r["created_at"] or "")[:16]}</td></tr>'
+            f'<td style="color:#888;font-size:11px">{(r["created_at"] or "")[:16]}</td></tr>'
             for r in results
         ) or f'<tr><td colspan="4" class="empty">No results for "{_html.escape(q)}"</td></tr>'
         results_html = (
@@ -2012,10 +2094,10 @@ def memory_page(q: str = ""):
     else:
         recent = _memory.get_recent_facts(limit=25)
         rows = "".join(
-            f'<tr><td style="color:#444">{r["id"]}</td>'
+            f'<tr><td style="color:#888">{r["id"]}</td>'
             f'<td>{_html.escape(r["content"][:300])}</td>'
             f'<td><span class="tag">{_html.escape(r.get("tags",""))}</span></td>'
-            f'<td style="color:#444;font-size:11px">{(r["created_at"] or "")[:16]}</td></tr>'
+            f'<td style="color:#888;font-size:11px">{(r["created_at"] or "")[:16]}</td></tr>'
             for r in recent
         ) or '<tr><td colspan="4" class="empty">No memories yet</td></tr>'
         results_html = (
@@ -2023,7 +2105,8 @@ def memory_page(q: str = ""):
             '<table><thead><tr><th>ID</th><th>Content</th><th>Tags</th><th>Date</th></tr></thead>'
             f'<tbody>{rows}</tbody></table>'
         )
-    return _page("Memory", f'<h1>Memory</h1>{stats}{search}{results_html}', "memory")
+    back = '<a href="/" style="color:#888;font-size:11px;display:inline-block;margin-bottom:12px">&larr; Dashboard</a>'
+    return _page("Memory", f'{back}<h1>Memory</h1>{stats}{search}{results_html}', "memory")
 
 
 # ── Agents ─────────────────────────────────────────────────────────────────────
@@ -2048,18 +2131,20 @@ def agents_page():
         f'{"HOT" if a.get("loaded") else "online" if a.get("available") else "offline"}</td>'
         f'<td>{_html.escape(", ".join(a.get("assigned_types",[]) or []) or "—")}</td>'
         f'<td>{_html.escape(", ".join(a.get("capabilities",[]) or []) or "—")}</td>'
-        f'<td style="color:#555">{_html.escape(a.get("description",""))}</td>'
+        f'<td style="color:#999">{_html.escape(a.get("description",""))}</td>'
         f'</tr>'
         for a in available
     ) or '<tr><td colspan="5" class="empty">No models found — is Ollama running?</td></tr>'
 
     default = cfg.get("ollama.model", "unknown")
+    back = '<a href="/" style="color:#888;font-size:11px;display:inline-block;margin-bottom:12px">&larr; Dashboard</a>'
     return _page("Agents", (
-        f'<h1>Agent Roster</h1>'
-        f'<div class="alert alert-info">Default model: <strong>{_html.escape(default)}</strong></div>'
-        f'<p style="color:#444;margin-bottom:14px;font-size:11px">Use <code>/agents assign</code> in the CLI to modify assignments.</p>'
-        f'<table><thead><tr><th>Model</th><th>Status</th><th>Types</th><th>Capabilities</th><th>Description</th></tr></thead>'
-        f'<tbody>{rows}</tbody></table>'
+        back
+        + f'<h1>Agent Roster</h1>'
+        + f'<div class="alert alert-info">Default model: <strong>{_html.escape(default)}</strong></div>'
+        + f'<p style="color:#888;margin-bottom:14px;font-size:11px">Use <code>/agents assign</code> in the CLI to modify assignments.</p>'
+        + f'<table><thead><tr><th>Model</th><th>Status</th><th>Types</th><th>Capabilities</th><th>Description</th></tr></thead>'
+        + f'<tbody>{rows}</tbody></table>'
     ), "agents")
 
 
@@ -2073,7 +2158,8 @@ def vault_rebuild():
         _run_status["last"] = "Vault index and backlinks rebuilt."
     except Exception as e:
         _run_status["last"] = f"Rebuild error: {e}"
-    return RedirectResponse("/", status_code=303)
+        return RedirectResponse(f"/?msg=Error:+{_url_msg(str(e))}", status_code=303)
+    return RedirectResponse("/?msg=Vault+index+rebuilt", status_code=303)
 
 
 @app.post("/context/reload")
@@ -2082,9 +2168,10 @@ def context_reload():
         from context import reload_context
         reload_context()
         _run_status["last"] = "Context reloaded from disk."
+        return RedirectResponse("/?msg=Context+reloaded", status_code=303)
     except Exception as e:
         _run_status["last"] = f"Context reload error: {e}"
-    return RedirectResponse("/", status_code=303)
+        return RedirectResponse(f"/?msg=Error:+{_url_msg(str(e))}", status_code=303)
 
 
 # ── Force-research ─────────────────────────────────────────────────────────────
@@ -2130,7 +2217,7 @@ def force_research(slug: str):
             _run_status["started_ts"]   = 0.0
 
     threading.Thread(target=_do, daemon=True).start()
-    return RedirectResponse(f"/vault/{slug}", status_code=303)
+    return RedirectResponse(f"/vault/{slug}?msg=Research+started", status_code=303)
 
 
 # ── SSE live stream ────────────────────────────────────────────────────────────
@@ -2217,7 +2304,7 @@ def trigger_run():
             _run_status["started_ts"]   = 0.0
 
     threading.Thread(target=_do, daemon=True).start()
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/?msg=Research+run+started", status_code=303)
 
 
 # ── Feed check API ─────────────────────────────────────────────────────────────
@@ -2266,7 +2353,7 @@ def api_deadlinks_scan():
     global _dead_scan_running
     with _dead_scan_lock:
         if _dead_scan_running:
-            return JSONResponse({"status": "already_running"})
+            return RedirectResponse("/sources?msg=Scan+already+running", status_code=303)
         _dead_scan_running = True
 
     def _do_scan():
@@ -2303,7 +2390,7 @@ def api_deadlinks_scan():
             _dead_scan_running = False
 
     threading.Thread(target=_do_scan, daemon=True).start()
-    return JSONResponse({"status": "started", "count": 0})
+    return RedirectResponse("/sources?msg=Dead+link+scan+started", status_code=303)
 
 
 # ── Knowledge gaps page ────────────────────────────────────────────────────────
@@ -2366,9 +2453,9 @@ def gaps_page():
                 f'<tr>'
                 f'<td><a href="/vault/{n.slug}" style="color:#ccc">{_html.escape(n.name)}</a></td>'
                 f'<td><span style="color:{pri_col}">{n.priority}</span></td>'
-                f'<td style="color:#555">{n.type}</td>'
-                f'<td style="color:#444;font-size:11px">{(n.created or "")[:16]}</td>'
-                f'<td style="color:#444;font-size:11px">{last}</td>'
+                f'<td style="color:#999">{n.type}</td>'
+                f'<td style="color:#888;font-size:11px">{(n.created or "")[:16]}</td>'
+                f'<td style="color:#888;font-size:11px">{last}</td>'
                 f'<td><form method="post" action="/topics/{n.slug}/research" style="margin:0">'
                 f'<button class="btn-sm btn-green">▶ Run</button></form></td>'
                 f'</tr>'
@@ -2384,10 +2471,10 @@ def gaps_page():
             rows.append(
                 f'<tr>'
                 f'<td><a href="/vault/{n.slug}" style="color:#ccc">{_html.escape(n.name)}</a></td>'
-                f'<td style="color:#555">{n.type}</td>'
-                f'<td style="color:#444;font-size:11px">{(n.created or "")[:16]}</td>'
-                f'<td style="color:#444">depth {n.research_depth}</td>'
-                f'<td style="color:#444;font-size:11px">{last}</td>'
+                f'<td style="color:#999">{n.type}</td>'
+                f'<td style="color:#888;font-size:11px">{(n.created or "")[:16]}</td>'
+                f'<td style="color:#888">depth {n.research_depth}</td>'
+                f'<td style="color:#888;font-size:11px">{last}</td>'
                 f'</tr>'
             )
         return '<div class="table-wrap"><table><thead><tr><th>Topic</th><th>Type</th><th>Created</th><th>Depth</th><th>Last Run</th></tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>'
@@ -2425,7 +2512,7 @@ def gaps_page():
         f'<div class="stat-card"><div class="stat-num" style="color:#ff6b6b">{len(never_run)}</div><div class="stat-lbl">Unresearched</div></div>'
         f'<div class="stat-card"><div class="stat-num" style="color:#ffd93d">{len(orphans)}</div><div class="stat-lbl">Orphans</div></div>'
         f'<div class="stat-card"><div class="stat-num" style="color:#446677">{len(frontier)}</div><div class="stat-lbl">Frontier</div></div>'
-        f'<div class="stat-card"><div class="stat-num" style="color:#555">{len(singleton_tags)}</div><div class="stat-lbl">Singleton Tags</div></div>'
+        f'<div class="stat-card"><div class="stat-num" style="color:#999">{len(singleton_tags)}</div><div class="stat-lbl">Singleton Tags</div></div>'
         f'<div class="stat-card"><div class="stat-num">{len(notes)}</div><div class="stat-lbl">Total Notes</div></div>'
         '</div>'
     )
@@ -2433,11 +2520,11 @@ def gaps_page():
     body = (
         '<h1>Knowledge Gaps</h1>'
         + stats_html
-        + '<h2>Unresearched Topics <span style="color:#333;font-size:12px">— depth 0 or never run</span></h2>'
+        + '<h2>Unresearched Topics <span style="color:#777;font-size:12px">— depth 0 or never run</span></h2>'
         + _never_run_rows()
-        + '<h2 style="margin-top:28px">Isolated Notes <span style="color:#333;font-size:12px">— no links in or out</span></h2>'
+        + '<h2 style="margin-top:28px">Isolated Notes <span style="color:#777;font-size:12px">— no links in or out</span></h2>'
         + _orphan_rows()
-        + '<h2 style="margin-top:28px">Frontier Nodes <span style="color:#333;font-size:12px">— referenced but not created</span></h2>'
+        + '<h2 style="margin-top:28px">Frontier Nodes <span style="color:#777;font-size:12px">— referenced but not created</span></h2>'
         + _frontier_rows()
         + '<h2 style="margin-top:28px">Tag Coverage</h2>'
         + _tag_html()
@@ -2530,11 +2617,11 @@ def graph_page():
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
   <h1 style="margin:0">Research Graph</h1>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <span id="graph-stats" style="color:#333;font-size:11px">loading...</span>
+    <span id="graph-stats" style="color:#777;font-size:11px">loading...</span>
     <button class="btn-sm btn-dim" onclick="resetView()">&#8857; Reset</button>
     <button class="btn-sm btn-dim" onclick="toggleLabels()" id="btn-labels">&#9707; Labels</button>
     <button class="btn-sm btn-dim" onclick="toggleTags()" id="btn-tags" style="color:#a78bfa">&#8764; Tags</button>
-    <button class="btn-sm btn-dim" onclick="toggleGhosts()" id="btn-ghosts" style="color:#444">&#9702; Frontier</button>
+    <button class="btn-sm btn-dim" onclick="toggleGhosts()" id="btn-ghosts" style="color:#888">&#9702; Frontier</button>
   </div>
 </div>
 <div class="graph-legend">
@@ -2547,11 +2634,11 @@ def graph_page():
   <span class="legend-item" style="margin-left:12px"><span style="display:inline-block;width:22px;height:2px;background:linear-gradient(90deg,#7dd3fc,#c4b5fd);margin-right:4px;vertical-align:middle"></span>wiki&nbsp;link</span>
   <span class="legend-item"><span style="display:inline-block;width:22px;height:2px;border-top:1px dashed #a78bfa55;margin-right:4px;vertical-align:middle"></span>shared&nbsp;tag</span>
   <span class="legend-item" style="margin-left:12px"><span class="legend-dot" style="background:#ffd93d;border-radius:2px"></span>depth&nbsp;&#8805;3</span>
-  <span style="margin-left:auto;color:#333;font-size:10px">scroll=zoom &nbsp; drag=pan &nbsp; drag node=pin &nbsp; click=select &nbsp; dbl-click=open</span>
+  <span style="margin-left:auto;color:#777;font-size:10px">scroll=zoom &nbsp; drag=pan &nbsp; drag node=pin &nbsp; click=select &nbsp; dbl-click=open</span>
 </div>
 <canvas id="graph-canvas"></canvas>
 <div id="graph-tooltip"></div>
-<div id="graph-info" style="color:#444">Loading graph...</div>
+<div id="graph-info" style="color:#888">Loading graph...</div>
 <script>
 (function(){{
 var TYPE_COLOR={{tech:'#7dd3fc',person:'#c4b5fd',concept:'#fde68a',research:'#6bcb77',event:'#fb923c'}};
@@ -2954,24 +3041,24 @@ canvas.addEventListener('mousemove',function(e){{
     tooltip.innerHTML='<span style="color:rgb('+cr+','+cg+','+cb+')">'
       +'<strong>'+n.name+'</strong></span><br>'
       +(ghost?'<em style="color:#446">frontier — not yet researched</em>'
-        :'<span style="color:#555">'+n.type+'</span>'
+        :'<span style="color:#999">'+n.type+'</span>'
         +' &nbsp;·&nbsp; depth '+n.depth
         +' &nbsp;·&nbsp; '+n.runs+' run'+(n.runs!==1?'s':''));
     if(!ghost){{
       var links2=allEdges.filter(function(e2){{return e2.kind==='link'&&(e2.source===n.id||e2.target===n.id);}}).length;
       var tags2=allEdges.filter(function(e2){{return e2.kind==='tag'&&(e2.source===n.id||e2.target===n.id);}}).length;
       info.innerHTML='<strong style="color:#ccc">'+n.name+'</strong>'
-        +' &nbsp;<span style="color:#333">·</span>&nbsp; '
+        +' &nbsp;<span style="color:#777">·</span>&nbsp; '
         +'<span style="color:rgb('+cr+','+cg+','+cb+')">'+n.type+'</span>'
         +' &nbsp; depth <span style="color:var(--accent)">'+n.depth+'</span>'
         +' &nbsp; '+n.runs+' run'+(n.runs!==1?'s':'')
         +' &nbsp; '+links2+' link'+(links2!==1?'s':'')
         +' &nbsp; '+tags2+' shared tag'+(tags2!==1?'s':'')
         +' &nbsp;&nbsp;<a href="/vault/'+n.id+'">Open →</a>'
-        +' &nbsp;<span style="color:#333">(dbl-click)</span>';
+        +' &nbsp;<span style="color:#777">(dbl-click)</span>';
     }}else{{
       info.innerHTML='<span style="color:#446677">'+n.name+'</span>'
-        +' &nbsp;<span style="color:#333">·</span>&nbsp; referenced but not yet researched';
+        +' &nbsp;<span style="color:#777">·</span>&nbsp; referenced but not yet researched';
     }}
   }}else{{
     canvas.style.cursor=panning?'grabbing':'default';
