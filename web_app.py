@@ -822,13 +822,80 @@ def _nav(active: str = "") -> str:
     )
 
 
+_TAB_JS = """<script>
+(function(){
+  /* ── Animated favicon ── */
+  var fc=document.createElement('canvas');
+  fc.width=fc.height=32;
+  var fx=fc.getContext('2d');
+  var _fhue=0;
+  var _flink=document.querySelector('link[rel~="icon"]');
+  if(!_flink){_flink=document.createElement('link');_flink.rel='icon';document.head.appendChild(_flink);}
+
+  function drawFavicon(){
+    fx.clearRect(0,0,32,32);
+    /* outer glow ring */
+    var grad=fx.createRadialGradient(16,16,4,16,16,15);
+    grad.addColorStop(0,'hsla('+_fhue+',90%,65%,0.9)');
+    grad.addColorStop(0.6,'hsla('+((_fhue+60)%360)+',80%,50%,0.5)');
+    grad.addColorStop(1,'hsla('+((_fhue+120)%360)+',70%,40%,0)');
+    fx.fillStyle=grad;
+    fx.beginPath();fx.arc(16,16,15,0,Math.PI*2);fx.fill();
+    /* inner diamond ◈ */
+    fx.save();
+    fx.translate(16,16);
+    fx.rotate(_fhue*Math.PI/180);
+    fx.fillStyle='hsla('+((_fhue+180)%360)+',100%,75%,1)';
+    fx.beginPath();
+    fx.moveTo(0,-9);fx.lineTo(9,0);fx.lineTo(0,9);fx.lineTo(-9,0);fx.closePath();
+    fx.fill();
+    /* inner cutout */
+    fx.fillStyle='#0b0b0b';
+    fx.beginPath();
+    fx.moveTo(0,-4);fx.lineTo(4,0);fx.lineTo(0,4);fx.lineTo(-4,0);fx.closePath();
+    fx.fill();
+    fx.restore();
+    _flink.href=fc.toDataURL('image/png');
+    _fhue=(_fhue+1.8)%360;
+  }
+  setInterval(drawFavicon,60);
+  drawFavicon();
+
+  /* ── theme-color pulse ── */
+  var _tmeta=document.querySelector('meta[name="theme-color"]');
+  if(!_tmeta){_tmeta=document.createElement('meta');_tmeta.name='theme-color';document.head.appendChild(_tmeta);}
+  var _thue=200;
+  setInterval(function(){
+    _thue=(_thue+0.4)%360;
+    _tmeta.content='hsl('+_thue+',30%,8%)';
+  },50);
+
+  /* ── Dynamic tab title ── */
+  var _baseTitle=document.title;
+  var _titleFrames=['◈','◇','◈','◆'];
+  var _tfi=0;
+  setInterval(function(){
+    fetch('/api/stats').then(function(r){return r.json();}).then(function(d){
+      _tfi=(_tfi+1)%_titleFrames.length;
+      var icon=_titleFrames[_tfi];
+      if(d.running && d.active_topic){
+        document.title=icon+' '+d.active_topic+' — Phantom';
+      } else {
+        document.title=icon+' '+_baseTitle;
+      }
+    }).catch(function(){});
+  },2000);
+})();
+</script>"""
+
 def _page(title: str, body: str, active: str = "") -> HTMLResponse:
     return HTMLResponse(
         f'<!DOCTYPE html><html><head>'
         f'<meta charset="utf-8"><meta name="viewport" content="width=device-width">'
+        f'<meta name="theme-color" content="#0b0b10">'
         f'<title>{_html.escape(title)} — Phantom</title>'
         f'{_CSS}</head>'
-        f'<body>{_ACCENT_JS}{_nav(active)}'
+        f'<body>{_ACCENT_JS}{_TAB_JS}{_nav(active)}'
         f'<div class="container">{body}</div></body></html>'
     )
 
