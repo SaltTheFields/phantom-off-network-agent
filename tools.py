@@ -403,9 +403,28 @@ def execute_tool(tool_call: dict, memory_store, vault=None, topics=None) -> str:
             vault.write_note(note)
             if topics:
                 topics.mark_researched(note.slug)
+
+            # Auto-queue any new [[wiki link]] topics discovered during research
+            auto_queued = []
+            if topics:
+                for link_name in vault.extract_wikilinks(body):
+                    link_slug = vault.name_to_slug(link_name)
+                    if not vault.note_exists(link_slug):
+                        try:
+                            topics.create_topic(
+                                link_name,
+                                type=note.type,   # inherit parent type
+                                priority="low",
+                                tags=list(note.tags),
+                            )
+                            auto_queued.append(link_name)
+                        except Exception:
+                            pass  # already exists or slug collision
+
             vault.rebuild_index()
             vault.rebuild_backlinks()
-            return f"Note updated: {note.name} ({note.slug}.md)"
+            queued_msg = f" | auto-queued: {', '.join(auto_queued)}" if auto_queued else ""
+            return f"Note updated: {note.name} ({note.slug}.md){queued_msg}"
 
         else:
             available = "web_search, fetch_page, remember, recall, read_note, update_note"

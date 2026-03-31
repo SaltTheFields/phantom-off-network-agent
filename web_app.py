@@ -440,6 +440,50 @@ pre{
 .lc-note      {color:#4ecdc4}
 .lc-info      {color:#7a7a7a}
 .lc-warn      {color:#ffd93d}
+
+/* ── Rendered markdown ── */
+.md-body{line-height:1.75;color:#c0c0c0;font-size:13px}
+.md-body h1{font-size:17px;color:#fff;margin:20px 0 10px;border-left:3px solid var(--accent);padding-left:10px;letter-spacing:.03em}
+.md-body h2{font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:.15em;margin:20px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--accent-border)}
+.md-body h3{font-size:13px;color:#aaa;margin:14px 0 6px;letter-spacing:.04em}
+.md-body p{margin:8px 0}
+.md-body ul,.md-body ol{padding-left:22px;margin:8px 0}
+.md-body li{margin:4px 0;color:#b0b0b0}
+.md-body blockquote{border-left:3px solid var(--accent-dim);padding:6px 14px;color:#777;margin:10px 0;font-style:italic}
+.md-body code{background:#141414;color:#c4b5fd;padding:1px 5px;border-radius:3px;font-size:11px}
+.md-body pre{background:#0c0c0c;border:1px solid #181818;padding:12px;border-radius:4px;overflow-x:auto;margin:10px 0}
+.md-body pre code{background:none;padding:0;color:#a8c0b0;font-size:11px}
+.md-body a{color:var(--accent)}
+.md-body a:hover{color:var(--accent-bright)}
+.md-body hr{border:none;border-top:1px solid #1e1e1e;margin:18px 0}
+.md-body strong{color:#ddd;font-weight:bold}
+.md-body em{color:#aaa;font-style:italic}
+.wikilink{color:var(--accent-bright) !important;border-bottom:1px dashed var(--accent-dim)}
+.wikilink-ghost{color:#446677 !important;border-bottom:1px dashed #334455;font-style:italic}
+.callout{border-radius:4px;padding:10px 16px;margin:12px 0;border-left:4px solid;font-size:12px}
+.callout-warning{background:#1c1a08;border-color:#ffd93d;color:#ffd93d}
+.callout-note   {background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+.callout-info   {background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+.callout-tip    {background:#0c1a0c;border-color:#6bcb77;color:#6bcb77}
+.callout-danger {background:#180a0a;border-color:#ff6b6b;color:#ff6b6b}
+.callout-icon   {margin-right:6px;font-style:normal}
+
+/* ── Graph page ── */
+#graph-canvas{display:block;background:#0a0a0a;border:1px solid #1a1a1a;border-radius:6px;cursor:grab}
+#graph-canvas:active{cursor:grabbing}
+.graph-legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;font-size:11px}
+.legend-item{display:flex;align-items:center;gap:5px;color:#666}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+#graph-tooltip{
+  position:fixed;pointer-events:none;display:none;
+  background:#111;border:1px solid var(--accent-border);
+  border-radius:4px;padding:8px 12px;font-size:11px;
+  color:#ccc;z-index:999;max-width:220px;line-height:1.5;
+}
+#graph-info{
+  background:#0f0f0f;border:1px solid #1c1c1c;border-radius:4px;
+  padding:12px 16px;margin-top:12px;min-height:50px;font-size:12px;color:#888;
+}
 </style>"""
 
 
@@ -483,6 +527,149 @@ def _depth_bar(depth: int) -> str:
     )
     lbl = f'<span style="color:#444;font-size:10px;margin-left:4px">{depth}</span>'
     return f'<span class="depth-bar">{pips}</span>{lbl}'
+
+
+_INLINE_RE = None
+
+def _inline(text: str) -> str:
+    """Render inline markdown: WikiLinks, md links, code, bold, italic. HTML-safe."""
+    import re
+    global _INLINE_RE
+    if _INLINE_RE is None:
+        _INLINE_RE = re.compile(
+            r'(?P<wiki>\[\[(?P<wname>[^\]\|]+)(?:\|[^\]]*)?\]\])'
+            r'|(?P<mdlink>\[(?P<ltext>[^\]]+)\]\((?P<lurl>[^)]+)\))'
+            r'|(?P<code>`(?P<ctext>[^`]+)`)'
+            r'|(?P<bold>\*\*(?P<btext>[^*]+)\*\*)'
+            r'|(?P<italic>\*(?P<itext>[^*\n]+)\*)'
+        )
+    result = []
+    last = 0
+    for m in _INLINE_RE.finditer(text):
+        result.append(_html.escape(text[last:m.start()]))
+        last = m.end()
+        if m.group('wiki'):
+            name = m.group('wname').strip()
+            slug = _vault.name_to_slug(name)
+            # Check if note actually exists; ghost links get a dimmer style
+            exists = slug in {n.slug for n in _topics.list_topics()}
+            cls = 'wikilink' if exists else 'wikilink wikilink-ghost'
+            title = '' if exists else ' title="Not yet researched"'
+            result.append(f'<a href="/vault/{slug}" class="{cls}"{title}>[[{_html.escape(name)}]]</a>')
+        elif m.group('mdlink'):
+            result.append(f'<a href="{_html.escape(m.group("lurl"))}" target="_blank" rel="noopener">{_html.escape(m.group("ltext"))}</a>')
+        elif m.group('code'):
+            result.append(f'<code>{_html.escape(m.group("ctext"))}</code>')
+        elif m.group('bold'):
+            result.append(f'<strong>{_html.escape(m.group("btext"))}</strong>')
+        elif m.group('italic'):
+            result.append(f'<em>{_html.escape(m.group("itext"))}</em>')
+    result.append(_html.escape(text[last:]))
+    return ''.join(result)
+
+
+def _render_markdown(text: str) -> str:
+    """Convert a vault note markdown body to safe HTML."""
+    import re
+    if not text or not text.strip():
+        return '<p class="empty">No content yet.</p>'
+
+    _CALLOUT_ICON = {'warning': '⚠', 'note': 'ℹ', 'info': 'ℹ', 'tip': '💡', 'danger': '☢'}
+    lines  = text.splitlines()
+    out    = []
+    i      = 0
+    in_ul  = False
+    in_ol  = False
+
+    def close_list():
+        nonlocal in_ul, in_ol
+        if in_ul: out.append('</ul>'); in_ul = False
+        if in_ol: out.append('</ol>'); in_ol = False
+
+    while i < len(lines):
+        line = lines[i]
+
+        # ── Fenced code block ──────────────────────────────────────────────────
+        if line.strip().startswith('```'):
+            close_list()
+            lang  = _html.escape(line.strip()[3:].strip())
+            code  = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith('```'):
+                code.append(lines[i])
+                i += 1
+            cls = f' class="lang-{lang}"' if lang else ''
+            out.append(f'<pre><code{cls}>{_html.escape(chr(10).join(code))}</code></pre>')
+
+        # ── Headings ──────────────────────────────────────────────────────────
+        elif re.match(r'^#{4,6} ', line):
+            close_list()
+            txt = re.sub(r'^#{4,6} ', '', line)
+            out.append(f'<h3>{_inline(txt)}</h3>')
+        elif line.startswith('### '):
+            close_list()
+            out.append(f'<h3>{_inline(line[4:])}</h3>')
+        elif line.startswith('## '):
+            close_list()
+            out.append(f'<h2>{_inline(line[3:])}</h2>')
+        elif line.startswith('# '):
+            close_list()
+            out.append(f'<h1>{_inline(line[2:])}</h1>')
+
+        # ── HR ────────────────────────────────────────────────────────────────
+        elif re.match(r'^[-*_]{3,}\s*$', line):
+            close_list()
+            out.append('<hr>')
+
+        # ── Callouts  > [!type] ───────────────────────────────────────────────
+        elif re.match(r'^> \[!', line):
+            close_list()
+            m = re.match(r'^> \[!(\w+)\](.*)', line)
+            ctype = m.group(1).lower() if m else 'note'
+            rest  = (m.group(2) or '').strip() if m else ''
+            body_lines = [rest] if rest else []
+            i += 1
+            while i < len(lines) and lines[i].startswith('> '):
+                body_lines.append(lines[i][2:])
+                i += 1
+            icon = _CALLOUT_ICON.get(ctype, '▸')
+            out.append(
+                f'<div class="callout callout-{_html.escape(ctype)}">'
+                f'<span class="callout-icon">{icon}</span>'
+                f'{_inline(" ".join(body_lines))}</div>'
+            )
+            continue
+
+        # ── Blockquote ────────────────────────────────────────────────────────
+        elif line.startswith('> '):
+            close_list()
+            out.append(f'<blockquote>{_inline(line[2:])}</blockquote>')
+
+        # ── Bullet list ───────────────────────────────────────────────────────
+        elif re.match(r'^[-*] ', line):
+            if in_ol: out.append('</ol>'); in_ol = False
+            if not in_ul: out.append('<ul>'); in_ul = True
+            out.append(f'<li>{_inline(line[2:])}</li>')
+
+        # ── Ordered list ──────────────────────────────────────────────────────
+        elif re.match(r'^\d+\. ', line):
+            if in_ul: out.append('</ul>'); in_ul = False
+            if not in_ol: out.append('<ol>'); in_ol = True
+            out.append(f'<li>{_inline(re.sub(r"^\d+\. ", "", line))}</li>')
+
+        # ── Empty line ────────────────────────────────────────────────────────
+        elif line.strip() == '':
+            close_list()
+
+        # ── Paragraph ─────────────────────────────────────────────────────────
+        else:
+            close_list()
+            out.append(f'<p>{_inline(line)}</p>')
+
+        i += 1
+
+    close_list()
+    return '\n'.join(out)
 
 
 def _log_event_class(data: dict) -> str:
@@ -576,8 +763,8 @@ def _format_log_line(raw: str) -> str:
 
 
 def _nav(active: str = "") -> str:
-    pages = [("/", "Dashboard"), ("/vault", "Vault"), ("/topics", "Topics"),
-             ("/memory", "Memory"), ("/agents", "Agents"), ("/settings", "Settings")]
+    pages = [("/", "Dashboard"), ("/vault", "Vault"), ("/graph", "Graph"),
+             ("/topics", "Topics"), ("/memory", "Memory"), ("/agents", "Agents"), ("/settings", "Settings")]
     links = "".join(
         f'<a href="{h}" class="{"active" if label.lower() == active else ""}">{label}</a>'
         for h, label in pages
@@ -610,7 +797,16 @@ def api_stats():
     avg_depth = round(sum(depths) / len(depths), 1) if depths else 0
     # count forward links across all notes as a "connection" measure
     total_links = sum(len(n.forward_links) for n in all_notes)
-    elapsed = round(_time.time() - _run_status["started_ts"], 0) if _run_status["running"] and _run_status["started_ts"] else 0
+    # Cap elapsed at 6h — anything longer means the run_done event was missed
+    _MAX_ELAPSED = 6 * 3600
+    if _run_status["running"] and _run_status["started_ts"]:
+        elapsed = round(_time.time() - _run_status["started_ts"], 0)
+        if elapsed > _MAX_ELAPSED:
+            _run_status["running"] = False
+            _run_status["started_ts"] = 0.0
+            elapsed = 0
+    else:
+        elapsed = 0
     return JSONResponse({
         "queued":        len([n for n in all_notes if n.status == "queued"]),
         "active_topics": len([n for n in all_notes if n.status == "active"]),
@@ -721,14 +917,43 @@ def dashboard():
         f'</td>'
         f'</tr>'
         for n in sorted_topics
-    ) or '<tr><td colspan="7" class="empty">No active topics — create one in Topics</td></tr>'
+    ) or '<tr><td colspan="6" class="empty">No active topics — create one in Topics</td></tr>'
+
+    # Archived rows (hidden by default, revealed by checkbox)
+    arch_notes = sorted([n for n in all_notes if n.status == "archived"],
+                        key=lambda n: n.name)
+    arch_rows = "".join(
+        f'<tr style="opacity:0.45">'
+        f'<td><a href="/vault/{n.slug}">{_html.escape(n.name)}</a></td>'
+        f'<td>{_badge(n.status)}</td>'
+        f'<td>{_badge(n.priority)}</td>'
+        f'<td style="color:#555">{n.type}</td>'
+        f'<td>{_depth_bar(n.research_depth)}</td>'
+        f'<td style="color:#444;font-size:11px">{str(n.last_researched or "never")[:10]}</td>'
+        f'<td>'
+        f'<form method="post" action="/topics/{n.slug}/queue" style="display:inline">'
+        f'<button class="btn-sm" title="Unarchive">↺</button></form>'
+        f'</td>'
+        f'</tr>'
+        for n in arch_notes
+    )
 
     queue_section = (
-        f'<h2>Active Research Topics <span class="h2-count">{len(non_arch)}</span></h2>'
+        f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">'
+        f'<h2 style="margin:0">Active Research Topics <span class="h2-count">{len(non_arch)}</span></h2>'
+        f'<label style="font-size:11px;color:#333;display:flex;align-items:center;gap:5px;cursor:pointer;margin-left:auto">'
+        f'<input type="checkbox" id="show-archived" onchange="toggleArchived(this.checked)" style="accent-color:#555">'
+        f'Show {arch_ct} archived</label>'
+        f'</div>'
         f'<div class="table-wrap"><table><thead><tr>'
         f'<th>Topic</th><th>Status</th><th>Priority</th><th>Type</th>'
         f'<th>Depth</th><th>Last Research</th><th></th>'
-        f'</tr></thead><tbody>{topic_rows}</tbody></table></div>'
+        f'</tr></thead>'
+        f'<tbody id="active-rows">{topic_rows}</tbody>'
+        f'<tbody id="arch-rows" style="display:none">{arch_rows}</tbody>'
+        f'</table></div>'
+        f'<script>function toggleArchived(on){{'
+        f'document.getElementById("arch-rows").style.display=on?"":"none";}}</script>'
     )
 
     # ── Depth distribution
@@ -995,9 +1220,23 @@ def vault_list():
 def vault_note(slug: str):
     note = _vault.read_note(slug)
     if not note:
-        return _page("Not Found",
-                     f'<div class="alert alert-warn">Note not found: {_html.escape(slug)}</div>',
-                     "vault")
+        # Check if it looks like a frontier/ghost node (referenced but not yet researched)
+        display_name = slug.replace("-", " ").title()
+        ghost_body = (
+            f'<div style="text-align:center;padding:60px 20px">'
+            f'<div style="font-size:48px;margin-bottom:16px;opacity:0.3">◌</div>'
+            f'<h2 style="color:#446677;margin-bottom:8px">{_html.escape(display_name)}</h2>'
+            f'<p style="color:#333;margin-bottom:24px">This topic has been referenced but not yet researched.</p>'
+            f'<form method="post" action="/topics/new" style="display:inline">'
+            f'<input type="hidden" name="name" value="{_html.escape(display_name)}">'
+            f'<input type="hidden" name="type" value="research">'
+            f'<input type="hidden" name="priority" value="medium">'
+            f'<button class="btn-green" style="padding:10px 24px;font-size:14px">+ Queue for Research</button>'
+            f'</form>'
+            f' &nbsp; <a href="/vault"><button class="btn-dim">← Back to Vault</button></a>'
+            f'</div>'
+        )
+        return _page(f"Frontier: {display_name}", ghost_body, "vault")
 
     tags  = "".join(f'<span class="tag">{_html.escape(t)}</span>' for t in note.tags) \
             or "<span style='color:#333'>none</span>"
@@ -1015,7 +1254,6 @@ def vault_note(slug: str):
         f'<div><span class="lbl">Type</span> <span>{_html.escape(note.type)}</span></div>'
         f'<div><span class="lbl">Created</span> <span style="color:#888">{_html.escape(note.created)}</span></div>'
         f'<div><span class="lbl">Researched</span> <span style="color:#888">{_html.escape(str(note.last_researched or "never"))}</span></div>'
-        f'<div><span class="lbl">Refresh</span> <span style="color:#888">every {note.refresh_interval_days}d</span></div>'
         f'<div><span class="lbl">Depth</span> {_depth_bar(note.research_depth)}</div>'
         f'<div><span class="lbl">Runs</span> <span style="color:var(--accent)">{note.research_runs}</span></div>'
         f'<div><span class="lbl">Sources</span> <span style="color:var(--accent)">{note.total_sources_fetched}</span></div>'
@@ -1034,8 +1272,60 @@ def vault_note(slug: str):
         '<a href="/vault"><button class="btn-dim">← Back</button></a>'
         '</div>'
     )
-    return _page(note.name, f'<h1>{_html.escape(note.name)}</h1>{actions}{meta}'
-                             f'<h2>Note Content</h2><pre>{_html.escape(note.body or "")}</pre>', "vault")
+    # ── Sources with credibility scores ────────────────────────────────────────
+    _CRED_LABEL = {1: "academic", 2: "quality-news", 3: "general", 4: "aggregator", 5: "social"}
+    _CRED_COLOR = {1: "#6bcb77", 2: "#7dd3fc", 3: "#888888", 4: "#ffd93d", 5: "#ff6b6b"}
+    sources_html = ""
+    try:
+        srcs = _memory.get_sources_for_topic(note.slug)
+        if srcs:
+            rows = []
+            for s in srcs:
+                r    = s.get("reliability") or 3
+                col  = _CRED_COLOR.get(r, "#888888")
+                lbl  = _CRED_LABEL.get(r, "general")
+                url  = _html.escape(s.get("url", ""))
+                dom  = _html.escape(s.get("domain", url[:40]))
+                cnt  = s.get("fetch_count", 1)
+                date = (s.get("last_fetched") or "")[:10]
+                score_badge = f'<span style="color:{col};font-size:10px;padding:1px 5px;border:1px solid {col}44;border-radius:9px">{lbl} {r}/5</span>'
+                rows.append(
+                    f'<tr><td><a href="{url}" target="_blank" rel="noopener">{dom}</a></td>'
+                    f'<td>{score_badge}</td>'
+                    f'<td style="color:#555">{cnt}×</td>'
+                    f'<td style="color:#444">{date}</td></tr>'
+                )
+            sources_html = (
+                '<h2>Sources</h2>'
+                '<div class="table-wrap"><table>'
+                '<thead><tr><th>URL</th><th>Credibility</th><th>Fetched</th><th>Date</th></tr></thead>'
+                '<tbody>' + ''.join(rows) + '</tbody></table></div>'
+            )
+    except Exception:
+        pass
+
+    rendered = _render_markdown(note.body or "")
+    raw_escaped = _html.escape(note.body or "")
+    content_section = f"""
+<h2>Note Content
+  <span style="margin-left:auto;display:inline-flex;gap:4px">
+    <button class="btn-sm btn-dim" onclick="showTab('rendered')" id="tab-rendered">Rendered</button>
+    <button class="btn-sm btn-dim" onclick="showTab('raw')" id="tab-raw">Raw</button>
+  </span>
+</h2>
+<div id="pane-rendered" class="md-body">{rendered}</div>
+<div id="pane-raw" style="display:none"><pre>{raw_escaped}</pre></div>
+{sources_html}
+<script>
+function showTab(t){{
+  document.getElementById('pane-rendered').style.display = t==='rendered'?'':'none';
+  document.getElementById('pane-raw').style.display      = t==='raw'?'':'none';
+  document.getElementById('tab-rendered').style.color    = t==='rendered'?'var(--accent)':'';
+  document.getElementById('tab-raw').style.color         = t==='raw'?'var(--accent)':'';
+}}
+showTab('rendered');
+</script>"""
+    return _page(note.name, f'<h1>{_html.escape(note.name)}</h1>{actions}{meta}{content_section}', "vault")
 
 
 @app.get("/vault/{slug}/edit", response_class=HTMLResponse)
@@ -1414,6 +1704,562 @@ def trigger_run():
 
     threading.Thread(target=_do, daemon=True).start()
     return RedirectResponse("/", status_code=303)
+
+
+# ── Graph API ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/graph")
+def api_graph():
+    notes    = _topics.list_topics()
+    slug_set = {n.slug for n in notes}
+    nodes    = []
+    edges    = []
+    seen_edges = set()
+
+    # Real nodes
+    for n in notes:
+        nodes.append({
+            "id":     n.slug,
+            "name":   n.name,
+            "type":   n.type or "research",
+            "depth":  n.research_depth,
+            "status": n.status,
+            "runs":   n.research_runs,
+            "tags":   n.tags or [],
+            "ghost":  False,
+        })
+
+    # WikiLink edges — vault-to-vault where target exists
+    # Also build ghost nodes for links that point outside the vault
+    ghost_nodes = {}  # name -> ghost node dict
+    for n in notes:
+        for link in (n.forward_links or []):
+            target_slug = _vault.name_to_slug(link)
+            if target_slug == n.slug:
+                continue  # skip self-loops
+            key = (n.slug, target_slug)
+            if key in seen_edges:
+                continue
+            seen_edges.add(key)
+            if target_slug in slug_set:
+                edges.append({"source": n.slug, "target": target_slug, "kind": "link"})
+            else:
+                # Ghost node — referenced but not yet researched
+                gid = "ghost:" + target_slug
+                if gid not in ghost_nodes:
+                    ghost_nodes[gid] = {
+                        "id":     gid,
+                        "name":   link,
+                        "type":   "ghost",
+                        "depth":  0,
+                        "status": "unresearched",
+                        "runs":   0,
+                        "tags":   [],
+                        "ghost":  True,
+                    }
+                gkey = (n.slug, gid)
+                if gkey not in seen_edges:
+                    seen_edges.add(gkey)
+                    edges.append({"source": n.slug, "target": gid, "kind": "link"})
+
+    nodes.extend(ghost_nodes.values())
+
+    # Tag-shared edges — connect real notes that share a tag
+    from collections import defaultdict
+    tag_map = defaultdict(list)
+    for n in notes:
+        for t in (n.tags or []):
+            if t:
+                tag_map[t].append(n.slug)
+    for tag, slugs in tag_map.items():
+        if len(slugs) < 2:
+            continue
+        for i in range(len(slugs)):
+            for j in range(i + 1, len(slugs)):
+                a, b = slugs[i], slugs[j]
+                key = tuple(sorted([a, b])) + ("tag",)
+                if key not in seen_edges:
+                    seen_edges.add(key)
+                    edges.append({"source": a, "target": b, "kind": "tag", "label": tag})
+
+    return JSONResponse({"nodes": nodes, "edges": edges})
+
+
+@app.get("/graph", response_class=HTMLResponse)
+def graph_page():
+    body = f"""
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+  <h1 style="margin:0">Research Graph</h1>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span id="graph-stats" style="color:#333;font-size:11px">loading...</span>
+    <button class="btn-sm btn-dim" onclick="resetView()">&#8857; Reset</button>
+    <button class="btn-sm btn-dim" onclick="toggleLabels()" id="btn-labels">&#9707; Labels</button>
+    <button class="btn-sm btn-dim" onclick="toggleTags()" id="btn-tags" style="color:#a78bfa">&#8764; Tags</button>
+    <button class="btn-sm btn-dim" onclick="toggleGhosts()" id="btn-ghosts" style="color:#444">&#9702; Frontier</button>
+  </div>
+</div>
+<div class="graph-legend">
+  <span class="legend-item"><span class="legend-dot" style="background:#7dd3fc"></span>tech</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#c4b5fd"></span>person</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#fde68a"></span>concept</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#6bcb77"></span>research</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#fb923c"></span>event</span>
+  <span class="legend-item" style="opacity:0.5"><span class="legend-dot" style="background:#444;border:1px dashed #666"></span>frontier</span>
+  <span class="legend-item" style="margin-left:12px"><span style="display:inline-block;width:22px;height:2px;background:linear-gradient(90deg,#7dd3fc,#c4b5fd);margin-right:4px;vertical-align:middle"></span>wiki&nbsp;link</span>
+  <span class="legend-item"><span style="display:inline-block;width:22px;height:2px;border-top:1px dashed #a78bfa55;margin-right:4px;vertical-align:middle"></span>shared&nbsp;tag</span>
+  <span class="legend-item" style="margin-left:12px"><span class="legend-dot" style="background:#ffd93d;border-radius:2px"></span>depth&nbsp;&#8805;3</span>
+  <span style="margin-left:auto;color:#333;font-size:10px">scroll=zoom &nbsp; drag=pan &nbsp; drag node=pin &nbsp; click=select &nbsp; dbl-click=open</span>
+</div>
+<canvas id="graph-canvas"></canvas>
+<div id="graph-tooltip"></div>
+<div id="graph-info" style="color:#444">Loading graph...</div>
+<script>
+(function(){{
+var TYPE_COLOR={{tech:'#7dd3fc',person:'#c4b5fd',concept:'#fde68a',research:'#6bcb77',event:'#fb923c'}};
+function nc(t){{return TYPE_COLOR[t]||'#888888';}}
+/* expand 3-char hex (#abc -> #aabbcc) before parsing */
+function h2r(h){{
+  if(h.length===4) h='#'+h[1]+h[1]+h[2]+h[2]+h[3]+h[3];
+  return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+}}
+/* roundRect polyfill for older browsers */
+function roundRect(ctx,x,y,w,h,r){{
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
+  ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);
+  ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);
+  ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);
+  ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
+}}
+
+var canvas=document.getElementById('graph-canvas');
+var ctx=canvas.getContext('2d');
+var tooltip=document.getElementById('graph-tooltip');
+var info=document.getElementById('graph-info');
+var statsEl=document.getElementById('graph-stats');
+
+/* viewport */
+var vx=0,vy=0,vs=1;
+var panning=false,panS={{x:0,y:0}},panO={{x:0,y:0}};
+function tw(sx,sy){{return[(sx-vx)/vs,(sy-vy)/vs];}}
+
+function resize(){{
+  var w=canvas.parentElement.clientWidth-2;
+  canvas.width=Math.max(640,w);
+  canvas.height=Math.round(Math.max(500,w*0.60));
+  canvas.style.width='100%';
+  canvas.style.height=canvas.height+'px';
+}}
+resize();
+window.addEventListener('resize',function(){{resize();draw();}});
+
+/* state */
+var nodes=[],edges=[],nodeMap={{}};
+var allEdges=[];   /* full set */
+var hoveredId=null,selectedId=null,dragNode=null;
+var showLabels=true,showTags=true,showGhosts=true;
+var particles=[];
+var simAlpha=0;
+
+/* toggles — exposed to window so onclick= attributes can reach them */
+function resetView(){{vx=0;vy=0;vs=1;}}
+function toggleLabels(){{
+  showLabels=!showLabels;
+  document.getElementById('btn-labels').style.opacity=showLabels?1:0.4;
+}}
+function toggleTags(){{
+  showTags=!showTags;
+  document.getElementById('btn-tags').style.opacity=showTags?1:0.4;
+  rebuildEdges();
+}}
+function toggleGhosts(){{
+  showGhosts=!showGhosts;
+  document.getElementById('btn-ghosts').style.opacity=showGhosts?1:0.4;
+  rebuildEdges();
+}}
+window.resetView=resetView;
+window.toggleLabels=toggleLabels;
+window.toggleTags=toggleTags;
+window.toggleGhosts=toggleGhosts;
+function rebuildEdges(){{
+  edges=allEdges.filter(function(e){{
+    if(!showTags&&e.kind==='tag') return false;
+    var s=nodeMap[e.source],t=nodeMap[e.target];
+    if(!s||!t) return false;
+    if(!showGhosts&&(s.ghost||t.ghost)) return false;
+    return true;
+  }});
+  spawnParticles();
+}}
+
+/* radius: ghost nodes smaller */
+function nr(n){{
+  if(n.ghost) return 4/vs;
+  return(6+Math.min(n.depth||0,6)*2.4)/vs;
+}}
+
+/* neighbours */
+function neighbours(id){{
+  var s=new Set();
+  edges.forEach(function(e){{
+    if(e.source===id)s.add(e.target);
+    if(e.target===id)s.add(e.source);
+  }});
+  return s;
+}}
+
+/* bezier ctrl */
+function cp(ax,ay,bx,by){{
+  var mx=(ax+bx)/2,my=(ay+by)/2,dx=bx-ax,dy=by-ay,d=Math.sqrt(dx*dx+dy*dy)+0.01;
+  var off=Math.min(55,d*0.22);
+  return[mx-dy/d*off,my+dx/d*off];
+}}
+
+/* fetch & init */
+fetch('/api/graph').then(function(r){{return r.json();}}).then(function(data){{
+  nodes=data.nodes; allEdges=data.edges;
+  nodes.forEach(function(n){{nodeMap[n.id]=n;}});
+  rebuildEdges();
+  layout();
+  spawnParticles();
+  startSim();
+  loop();
+  /* stats */
+  var real=nodes.filter(function(n){{return!n.ghost;}});
+  var ghosts=nodes.filter(function(n){{return n.ghost;}});
+  var links=allEdges.filter(function(e){{return e.kind==='link';}});
+  var tags=allEdges.filter(function(e){{return e.kind==='tag';}});
+  statsEl.textContent=real.length+' notes  ·  '+ghosts.length+' frontier  ·  '+links.length+' links  ·  '+tags.length+' tag connections';
+}});
+
+function layout(){{
+  var W=canvas.width/vs,H=canvas.height/vs;
+  nodes.forEach(function(n,i){{
+    if(n.x===undefined){{
+      var a=(i/nodes.length)*Math.PI*2;
+      var r=n.ghost?W*0.38:W*0.26;
+      n.x=W/2+Math.cos(a)*r+(Math.random()-.5)*40;
+      n.y=H/2+Math.sin(a)*r+(Math.random()-.5)*40;
+    }}
+    n.vx=0;n.vy=0;n.pinned=false;
+  }});
+}}
+
+/* particles — only on link edges */
+function spawnParticles(){{
+  particles=[];
+  edges.filter(function(e){{return e.kind==='link';}}).forEach(function(e){{
+    var n=1+Math.floor(Math.random()*2);
+    for(var i=0;i<n;i++)
+      particles.push({{e:e,t:Math.random(),spd:0.0007+Math.random()*0.0009}});
+  }});
+}}
+
+/* physics */
+function startSim(){{
+  simAlpha=1.0;
+  function tick(){{
+    if(simAlpha<0.002)return;
+    simAlpha*=0.973;
+    var W=canvas.width/vs,H=canvas.height/vs;
+    var REP=3800,SPR=0.05,CEN=0.009;
+    for(var a=0;a<nodes.length;a++){{
+      for(var b=a+1;b<nodes.length;b++){{
+        var na=nodes[a],nb=nodes[b];
+        var dx=nb.x-na.x,dy=nb.y-na.y,d2=dx*dx+dy*dy+1,d=Math.sqrt(d2);
+        var f=REP/d2*simAlpha;
+        na.vx-=dx/d*f;na.vy-=dy/d*f;nb.vx+=dx/d*f;nb.vy+=dy/d*f;
+      }}
+    }}
+    edges.forEach(function(e){{
+      var s=nodeMap[e.source],t=nodeMap[e.target];if(!s||!t)return;
+      var dx=t.x-s.x,dy=t.y-s.y,d=Math.sqrt(dx*dx+dy*dy)+0.01;
+      var rest=e.kind==='tag'?160:120;
+      var f=(d-rest)*SPR*simAlpha;
+      s.vx+=dx/d*f;s.vy+=dy/d*f;t.vx-=dx/d*f;t.vy-=dy/d*f;
+    }});
+    nodes.forEach(function(n){{
+      n.vx+=(W/2-n.x)*CEN*simAlpha;
+      n.vy+=(H/2-n.y)*CEN*simAlpha;
+    }});
+    nodes.forEach(function(n){{
+      if(n.pinned||n===dragNode)return;
+      n.x+=n.vx;n.y+=n.vy;n.vx*=0.70;n.vy*=0.70;
+      n.x=Math.max(20,Math.min(W-20,n.x));
+      n.y=Math.max(20,Math.min(H-20,n.y));
+    }});
+    requestAnimationFrame(tick);
+  }}
+  requestAnimationFrame(tick);
+}}
+
+function loop(){{
+  particles.forEach(function(p){{p.t=(p.t+p.spd)%1;}});
+  draw();
+  requestAnimationFrame(loop);
+}}
+
+function draw(){{
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.save();
+  ctx.translate(vx,vy);ctx.scale(vs,vs);
+
+  var focId=selectedId||hoveredId;
+  var nb=focId?neighbours(focId):null;
+  var hasFoc=focId!==null;
+
+  /* ── tag edges (dashed, drawn first, dimmer) ── */
+  edges.filter(function(e){{return e.kind==='tag';}}).forEach(function(e){{
+    var s=nodeMap[e.source],t=nodeMap[e.target];if(!s||!t)return;
+    if(s.ghost||t.ghost)return;
+    var isFoc=hasFoc&&(e.source===focId||e.target===focId);
+    var fade=hasFoc&&!isFoc;
+    var a=fade?0.04:(isFoc?0.5:0.14);
+    ctx.beginPath();
+    ctx.moveTo(s.x,s.y);ctx.lineTo(t.x,t.y);
+    ctx.strokeStyle='rgba(167,139,250,'+a+')';
+    ctx.lineWidth=(isFoc?1.5:0.8)/vs;
+    ctx.setLineDash([5/vs,4/vs]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    /* tag label on focused */
+    if(isFoc&&e.label){{
+      var mx=(s.x+t.x)/2,my=(s.y+t.y)/2;
+      ctx.font='9px Consolas,monospace';
+      ctx.textAlign='center';
+      ctx.fillStyle='rgba(167,139,250,0.7)';
+      ctx.fillText('#'+e.label,mx,my-5/vs);
+    }}
+  }});
+
+  /* ── link edges (curved gradient + arrowhead) ── */
+  edges.filter(function(e){{return e.kind==='link';}}).forEach(function(e){{
+    var s=nodeMap[e.source],t=nodeMap[e.target];if(!s||!t)return;
+    var isFoc=hasFoc&&(e.source===focId||e.target===focId);
+    var fade=hasFoc&&!isFoc;
+    var c=cp(s.x,s.y,t.x,t.y);
+    var scol=s.ghost?'#445566':nc(s.type), tcol=t.ghost?'#445566':nc(t.type);
+    var [sr,sg,sb]=h2r(scol),[tr2,tg,tb]=h2r(tcol);
+    var a=fade?0.06:(isFoc?0.8:0.3);
+    var grad=ctx.createLinearGradient(s.x,s.y,t.x,t.y);
+    grad.addColorStop(0,'rgba('+sr+','+sg+','+sb+','+a+')');
+    grad.addColorStop(1,'rgba('+tr2+','+tg+','+tb+','+a+')');
+    ctx.beginPath();
+    ctx.moveTo(s.x,s.y);
+    ctx.quadraticCurveTo(c[0],c[1],t.x,t.y);
+    ctx.strokeStyle=grad;
+    ctx.lineWidth=(isFoc?2.2:1)/vs;
+    ctx.stroke();
+    /* arrowhead */
+    if(!fade){{
+      var bt=0.82;
+      var bx=(1-bt)*(1-bt)*s.x+2*(1-bt)*bt*c[0]+bt*bt*t.x;
+      var by=(1-bt)*(1-bt)*s.y+2*(1-bt)*bt*c[1]+bt*bt*t.y;
+      var ang=Math.atan2(t.y-by,t.x-bx);
+      var rr=nr(t)+2/vs;
+      var ax=t.x-Math.cos(ang)*rr,ay=t.y-Math.sin(ang)*rr;
+      var asz=(isFoc?8:5)/vs;
+      ctx.beginPath();
+      ctx.moveTo(ax,ay);
+      ctx.lineTo(ax-asz*Math.cos(ang-0.42),ay-asz*Math.sin(ang-0.42));
+      ctx.lineTo(ax-asz*Math.cos(ang+0.42),ay-asz*Math.sin(ang+0.42));
+      ctx.closePath();
+      ctx.fillStyle='rgba('+tr2+','+tg+','+tb+','+(isFoc?0.95:0.4)+')';
+      ctx.fill();
+    }}
+  }});
+
+  /* ── particles ── */
+  particles.forEach(function(p){{
+    var s=nodeMap[p.e.source],t=nodeMap[p.e.target];if(!s||!t)return;
+    var isFoc=hasFoc&&(p.e.source===focId||p.e.target===focId);
+    if(hasFoc&&!isFoc)return;
+    var c=cp(s.x,s.y,t.x,t.y),tt=p.t;
+    var bx=(1-tt)*(1-tt)*s.x+2*(1-tt)*tt*c[0]+tt*tt*t.x;
+    var by=(1-tt)*(1-tt)*s.y+2*(1-tt)*tt*c[1]+tt*tt*t.y;
+    var col=s.ghost?'#445566':nc(s.type);
+    var[pr,pg,pb]=h2r(col);
+    ctx.beginPath();
+    ctx.arc(bx,by,isFoc?2.2/vs:1.4/vs,0,Math.PI*2);
+    ctx.fillStyle='rgba('+pr+','+pg+','+pb+','+(isFoc?0.95:0.6)+')';
+    ctx.shadowColor=col;ctx.shadowBlur=isFoc?8:4;
+    ctx.fill();ctx.shadowBlur=0;
+  }});
+
+  /* ── nodes ── */
+  nodes.forEach(function(n){{
+    if(n.ghost&&!showGhosts)return;
+    var r=nr(n);
+    var col=n.ghost?'#334455':nc(n.type);
+    var isFoc=n.id===focId;
+    var isN=nb&&nb.has(n.id);
+    var fade=hasFoc&&!isFoc&&!isN;
+    var[cr,cg,cb]=h2r(n.ghost?'#556677':col); /* col is always 6-char */
+
+    /* depth ring */
+    if(!n.ghost&&n.depth>=3&&!fade){{
+      ctx.beginPath();
+      ctx.arc(n.x,n.y,r+4/vs,0,Math.PI*2);
+      ctx.strokeStyle='rgba(255,217,61,'+(isFoc?0.65:0.22)+')';
+      ctx.lineWidth=1.4/vs;ctx.stroke();
+    }}
+
+    if(isFoc){{ctx.shadowColor=col;ctx.shadowBlur=24;}}
+
+    ctx.beginPath();ctx.arc(n.x,n.y,r,0,Math.PI*2);
+    var fa=fade?0.12:(isFoc?1:(isN?0.75:0.55));
+    ctx.fillStyle=n.ghost
+      ?'rgba(30,40,50,'+(fade?0.1:(isFoc?0.9:0.4))+')'
+      :'rgba('+cr+','+cg+','+cb+','+fa+')';
+    ctx.strokeStyle=n.ghost
+      ?'rgba(80,110,140,'+(fade?0.1:(isFoc?0.8:0.35))+')'
+      :'rgba('+cr+','+cg+','+cb+','+(fade?0.1:(isFoc?1:0.5))+')';
+    ctx.lineWidth=(isFoc?2.5:(n.ghost?0.8:1))/vs;
+    /* ghost: dashed border */
+    if(n.ghost)ctx.setLineDash([3/vs,2/vs]);
+    ctx.fill();ctx.stroke();
+    if(n.ghost)ctx.setLineDash([]);
+    ctx.shadowBlur=0;
+
+    /* selected spinner ring */
+    if(n.id===selectedId){{
+      ctx.beginPath();
+      ctx.arc(n.x,n.y,r+6/vs,0,Math.PI*2);
+      ctx.strokeStyle='rgba('+cr+','+cg+','+cb+',0.45)';
+      ctx.lineWidth=1/vs;
+      ctx.setLineDash([4/vs,3/vs]);
+      ctx.stroke();ctx.setLineDash([]);
+    }}
+
+    /* label */
+    if(showLabels&&(!fade||(isFoc||isN))){{
+      var ghost=n.ghost;
+      var fs=ghost?9:Math.max(9,Math.min(12,r*vs*0.85+8));
+      ctx.font=(isFoc&&!ghost?'bold ':'')+fs/vs+'px Consolas,monospace';
+      ctx.textAlign='center';
+      var lbl=n.name.length>26?n.name.slice(0,24)+'…':n.name;
+      var tw2=ctx.measureText(lbl).width;
+      var lx=n.x,ly=n.y+r+12/vs;
+      ctx.fillStyle='rgba(8,8,10,0.75)';
+      roundRect(ctx,lx-tw2/2-3/vs,ly-fs/vs,tw2+6/vs,fs*1.35/vs,2/vs);
+      ctx.fill();
+      ctx.fillStyle=fade?'#333':(ghost?(isFoc?'#99bbcc':'#446677'):(isFoc?'#fff':(isN?'#ddd':'#888')));
+      ctx.fillText(lbl,lx,ly);
+    }}
+  }});
+
+  ctx.restore();
+}}
+
+/* hit test — generous radius so nodes are easy to click */
+function nodeAt(sx,sy){{
+  var[wx,wy]=tw(sx,sy);
+  /* pass 1: check actual visual radius + 14px touch slop */
+  for(var i=nodes.length-1;i>=0;i--){{
+    var n=nodes[i];
+    if(n.ghost&&!showGhosts)continue;
+    var r=nr(n)+14/vs,dx=wx-n.x,dy=wy-n.y;
+    if(dx*dx+dy*dy<=r*r)return n;
+  }}
+  return null;
+}}
+
+/* zoom */
+canvas.addEventListener('wheel',function(e){{
+  e.preventDefault();
+  var rect=canvas.getBoundingClientRect();
+  var mx=e.clientX-rect.left,my=e.clientY-rect.top;
+  var d=e.deltaY>0?0.88:1.13;
+  vs=Math.max(0.25,Math.min(6,vs*d));
+  vx=mx-(mx-vx)*d;vy=my-(my-vy)*d;
+}},{{passive:false}});
+
+/* mouse */
+var _mouseDownX=0,_mouseDownY=0,_wasDrag=false;
+var DRAG_THRESHOLD=5; /* px — must move this far before suppressing click */
+canvas.addEventListener('mousedown',function(e){{
+  var rect=canvas.getBoundingClientRect();
+  var sx=e.clientX-rect.left,sy=e.clientY-rect.top;
+  var n=nodeAt(sx,sy);
+  _mouseDownX=e.clientX;_mouseDownY=e.clientY;
+  _wasDrag=false;
+  if(n){{
+    dragNode=n;n.pinned=true;
+    /* select immediately on press so it feels instant */
+    selectedId=n.id;
+  }}
+  else{{panning=true;panS={{x:e.clientX,y:e.clientY}};panO={{x:vx,y:vy}};canvas.style.cursor='grabbing';}}
+}});
+
+canvas.addEventListener('mousemove',function(e){{
+  var rect=canvas.getBoundingClientRect();
+  var sx=e.clientX-rect.left,sy=e.clientY-rect.top;
+  if(dragNode){{
+    var moved=Math.abs(e.clientX-_mouseDownX)+Math.abs(e.clientY-_mouseDownY);
+    if(moved>DRAG_THRESHOLD)_wasDrag=true;
+    var[wx,wy]=tw(sx,sy);dragNode.x=wx;dragNode.y=wy;return;
+  }}
+  if(panning){{
+    var moved=Math.abs(e.clientX-_mouseDownX)+Math.abs(e.clientY-_mouseDownY);
+    if(moved>DRAG_THRESHOLD)_wasDrag=true;
+    vx=panO.x+(e.clientX-panS.x);vy=panO.y+(e.clientY-panS.y);return;
+  }}
+  var n=nodeAt(sx,sy);
+  hoveredId=n?n.id:null;
+  if(n){{
+    canvas.style.cursor='pointer';
+    var ghost=n.ghost;
+    var[cr,cg,cb]=h2r(ghost?'#7799aa':nc(n.type)); /* both are always 6-char */
+    tooltip.style.display='block';
+    tooltip.style.left=(e.clientX+14)+'px';
+    tooltip.style.top=(e.clientY-10)+'px';
+    tooltip.innerHTML='<span style="color:rgb('+cr+','+cg+','+cb+')">'
+      +'<strong>'+n.name+'</strong></span><br>'
+      +(ghost?'<em style="color:#446">frontier — not yet researched</em>'
+        :'<span style="color:#555">'+n.type+'</span>'
+        +' &nbsp;·&nbsp; depth '+n.depth
+        +' &nbsp;·&nbsp; '+n.runs+' run'+(n.runs!==1?'s':''));
+    if(!ghost){{
+      var links2=allEdges.filter(function(e2){{return e2.kind==='link'&&(e2.source===n.id||e2.target===n.id);}}).length;
+      var tags2=allEdges.filter(function(e2){{return e2.kind==='tag'&&(e2.source===n.id||e2.target===n.id);}}).length;
+      info.innerHTML='<strong style="color:#ccc">'+n.name+'</strong>'
+        +' &nbsp;<span style="color:#333">·</span>&nbsp; '
+        +'<span style="color:rgb('+cr+','+cg+','+cb+')">'+n.type+'</span>'
+        +' &nbsp; depth <span style="color:var(--accent)">'+n.depth+'</span>'
+        +' &nbsp; '+n.runs+' run'+(n.runs!==1?'s':'')
+        +' &nbsp; '+links2+' link'+(links2!==1?'s':'')
+        +' &nbsp; '+tags2+' shared tag'+(tags2!==1?'s':'')
+        +' &nbsp;&nbsp;<a href="/vault/'+n.id+'">Open →</a>'
+        +' &nbsp;<span style="color:#333">(dbl-click)</span>';
+    }}else{{
+      info.innerHTML='<span style="color:#446677">'+n.name+'</span>'
+        +' &nbsp;<span style="color:#333">·</span>&nbsp; referenced but not yet researched';
+    }}
+  }}else{{
+    canvas.style.cursor=panning?'grabbing':'default';
+    tooltip.style.display='none';
+  }}
+}});
+
+canvas.addEventListener('mouseup',function(){{dragNode=null;panning=false;canvas.style.cursor='default';}});
+canvas.addEventListener('mouseleave',function(){{hoveredId=null;dragNode=null;panning=false;tooltip.style.display='none';}});
+
+canvas.addEventListener('click',function(e){{
+  if(_wasDrag){{_wasDrag=false;return;}}
+  var rect=canvas.getBoundingClientRect();
+  var n=nodeAt(e.clientX-rect.left,e.clientY-rect.top);
+  /* click empty space = deselect; click node already handled on mousedown */
+  if(!n)selectedId=null;
+}});
+
+canvas.addEventListener('dblclick',function(e){{
+  var rect=canvas.getBoundingClientRect();
+  var n=nodeAt(e.clientX-rect.left,e.clientY-rect.top);
+  if(n&&!n.ghost)window.location.href='/vault/'+n.id;
+}});
+
+}})();
+</script>"""
+    return _page("Research Graph", body, "graph")
 
 
 # ── Entry ──────────────────────────────────────────────────────────────────────

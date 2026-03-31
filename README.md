@@ -50,9 +50,13 @@ This is a research tool for people who want to think deeply about topics over ti
 | **Daily Digest** | Auto-generated summary of each research run |
 | **Conflict Detection** | New findings that contradict existing notes get flagged |
 | **Source Registry** | Every URL fetched is tracked with domain and fetch count |
+| **Article Cache** | Fetched pages cached in SQLite with timestamps and change-detection diffs |
+| **Source Credibility** | Every URL scored by domain tier (academic → gov → quality-news → general) |
 | **Research Templates** | Type-specific prompts: person / tech / event / concept / research |
 | **Static Context** | User-editable `context.md` injected into every LLM prompt |
 | **Topic Graph** | ASCII forward + backlink map across your entire vault |
+| **Semantic Memory** | Sentence-embeddings for hybrid FTS + cosine-similarity memory search |
+| **Consensus Mode** | Two-model research + reconciler pass for high-depth topics (opt-in) |
 | **Dynamic Dashboard** | Modern Web UI with auto-tailing logs and live research progress |
 
 ---
@@ -361,6 +365,49 @@ The **CuratorAgent** broker auto-selects the best available model for free-form 
 
 ---
 
+## Semantic Memory
+
+Phantom uses [sentence-transformers](https://www.sbert.net/) (`all-MiniLM-L6-v2`, ~80MB) to give memory search a semantic layer. When you `recall` a fact, results are ranked by a hybrid of full-text keyword match (FTS5 BM25) and cosine similarity between embeddings — so related concepts surface even when exact words don't match.
+
+**First run only**: the model is downloaded from Hugging Face (~80MB, one-time). After that it's cached locally and loads silently. The download is automatic but stays on your machine — nothing is sent to any cloud service.
+
+To check if it's active:
+
+```bash
+py -c "import embeddings; print('semantic search:', embeddings.is_available())"
+```
+
+If `sentence-transformers` is not installed, Phantom falls back gracefully to keyword-only FTS5 search — no errors, just less fuzz tolerance on recall.
+
+---
+
+## Consensus Mode
+
+Consensus mode runs a topic through **two independent Ollama models** and then uses a third (broker) model to reconcile the outputs. The result tends to be more thorough and self-correcting than a single-model run.
+
+**It is off by default** (`consensus_mode: false` in `config.json`). To enable it you need at least two Ollama models pulled locally:
+
+```bash
+ollama pull llama3.1:8b
+ollama pull mistral
+```
+
+Then in `config.json`:
+
+```json
+"agent": {
+  "consensus_mode": true,
+  "consensus_min_depth": 2
+}
+```
+
+- `consensus_min_depth` gates the expensive dual-model run to topics that have already been researched at least N times. Shallow or first-pass topics use your primary model only.
+- `broker_model` sets the reconciler. Defaults to the same value as `ollama.model` if not specified.
+
+If you only have one model, leave `consensus_mode: false` — the feature has no benefit and adds significant time per topic.
+
+---
+
 ## Static Context
 
 Edit `context.md` to give the agent persistent background knowledge injected into every prompt:
@@ -394,10 +441,14 @@ I am a software developer focused on privacy-first local tooling.
 {
   "ollama": {
     "base_url": "http://192.168.1.50:11434",
-    "model": "llama3.2",
+    "model": "llama3.1:8b",
     "broker_model": "phi3:mini",
-    "timeout": 120,
+    "timeout": 600,
     "temperature": 0.7
+  },
+  "agent": {
+    "consensus_mode": false,
+    "consensus_min_depth": 2
   },
   "vault": {
     "path": "vault",
@@ -448,11 +499,13 @@ I am a software developer focused on privacy-first local tooling.
 | Search | `ddgs` | No API key, no account |
 | Web fetch | `trafilatura` + `beautifulsoup4` | Best-in-class article extraction |
 | Memory | `sqlite3` (stdlib) + FTS5 | Full-text search, WAL concurrent writes |
+| Semantic search | `sentence-transformers` | Hybrid embedding + keyword recall (~80MB model, one-time download) |
+| Web dashboard | `fastapi` + `uvicorn` | Live SSE feed, vault editor, config UI |
 | Vault | Python stdlib | Hand-rolled YAML parser, no C extensions |
 | Logging | `json` (stdlib) | JSONL structured logs, zero deps |
 | Tests | `pytest` | 96 tests, all offline |
 
-7 pip packages. No vector database. No API keys. No framework magic.
+No vector database. No API keys. No cloud calls. All inference stays on your machine.
 
 ---
 

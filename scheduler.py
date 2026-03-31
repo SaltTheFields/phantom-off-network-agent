@@ -8,6 +8,10 @@ import sys
 import time
 import threading
 import traceback as _traceback
+
+# Force UTF-8 output so Unicode banner renders correctly on Windows
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date

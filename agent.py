@@ -6,6 +6,10 @@ Run scheduled: python agent.py --schedule
 import sys
 import os
 
+# Force UTF-8 output so Unicode banner renders correctly on Windows
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 # Auditory feedback
 def beep():
     if os.name == 'nt':

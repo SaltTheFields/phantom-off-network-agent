@@ -29,6 +29,7 @@
     "conflict_detection": true
   },
   "schedule": {
+    "consensus_models": ["llama3.1:8b", "mistral:latest"],
     "max_topics_per_run": 10,
     "stale_check_enabled": true,
     "generate_daily_digest": true,
