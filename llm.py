@@ -1,5 +1,6 @@
 import sys
 import asyncio
+import httpx
 import ollama as _ollama
 from config import cfg
 
@@ -66,10 +67,20 @@ def chat(messages: list[dict], system_prompt: str, stream: bool = True, model: s
 
     ollama_messages = [{"role": "system", "content": system_prompt}] + messages
 
+    # Build an explicit httpx.Timeout so the READ timeout actually fires.
+    # The ollama client accepts a scalar but httpx treats it as connect-only,
+    # meaning a model that accepts the request but never produces tokens hangs forever.
+    http_timeout = httpx.Timeout(
+        connect=10.0,   # fail fast if Ollama isn't listening
+        read=timeout,   # this is the one that matters — per-token read deadline
+        write=30.0,
+        pool=10.0,
+    )
+
     last_exc = None
     for attempt in range(max_retries):
         try:
-            client = _ollama.Client(host=base_url, timeout=timeout)
+            client = _ollama.Client(host=base_url, timeout=http_timeout)
 
             if stream:
                 full_response = ""
@@ -87,13 +98,20 @@ def chat(messages: list[dict], system_prompt: str, stream: bool = True, model: s
                 print()  # newline after streamed response
                 return full_response
             else:
-                response = client.chat(
+                # Use streaming internally even for non-interactive calls —
+                # this keeps the read timeout ticking per-token instead of
+                # waiting for the entire response, preventing silent hangs.
+                full_response = ""
+                for chunk in client.chat(
                     model=model,
                     messages=ollama_messages,
-                    stream=False,
+                    stream=True,
                     options={"temperature": temperature},
-                )
-                return response.message.content
+                ):
+                    token = chunk.message.content
+                    if token:
+                        full_response += token
+                return full_response
 
         except Exception as e:
             last_exc = e
