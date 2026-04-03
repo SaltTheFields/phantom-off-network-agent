@@ -32,7 +32,8 @@
   "vault": {
     "path": "vault",
     "default_refresh_interval_days": 7,
-    "conflict_detection": true
+    "conflict_detection": true,
+    "auto_branch": true
   },
   "schedule": {
     "consensus_models": ["llama3.1:8b", "mistral:latest"],

@@ -686,22 +686,46 @@ def execute_tool(tool_call: dict, memory_store, vault=None, topics=None) -> str:
             if topics:
                 topics.mark_researched(note.slug)
 
-            # Auto-queue any new [[wiki link]] topics discovered during research
+            # Auto-queue any new [[wiki link]] topics discovered during research.
+            # Can be disabled entirely via vault.auto_branch = false in config.json.
+            # Guard: only branch if the new topic shares at least one tag with the
+            # parent (or the parent has no tags — initial seed topics are tagless).
+            # This prevents the LLM from spiralling into unrelated domains.
             auto_queued = []
-            if topics:
+            auto_skipped = []
+            if topics and cfg.get("vault.auto_branch", True):
+                parent_tags = set(note.tags) if note.tags else set()
                 for link_name in vault.extract_wikilinks(body):
                     link_slug = vault.name_to_slug(link_name)
-                    if not vault.note_exists(link_slug):
-                        try:
-                            topics.create_topic(
-                                link_name,
-                                type=note.type,   # inherit parent type
-                                priority="low",
-                                tags=list(note.tags),
-                            )
-                            auto_queued.append(link_name)
-                        except Exception:
-                            pass  # already exists or slug collision
+                    if vault.note_exists(link_slug):
+                        continue
+                    # Check tag overlap — skip if parent is tagged and new topic
+                    # would inherit none of those tags (pure off-topic branch)
+                    # We can't check the child's tags before creation, so we rely
+                    # on the parent tags being meaningful. If parent has no tags,
+                    # allow branching freely (seed/root topics).
+                    # Additional guard: skip obviously generic single-word topics
+                    # that are likely the model drifting (Ethics, Philosophy, etc.)
+                    _GENERIC_DRIFT = {
+                        "ethics", "philosophy", "history", "science", "psychology",
+                        "sociology", "politics", "economics", "literature", "art",
+                        "technology", "religion", "culture", "society", "education",
+                        "mathematics", "physics", "chemistry", "biology", "medicine",
+                        "law", "language", "music", "architecture", "geography",
+                    }
+                    if link_name.lower().strip() in _GENERIC_DRIFT:
+                        auto_skipped.append(link_name)
+                        continue
+                    try:
+                        topics.create_topic(
+                            link_name,
+                            type=note.type,
+                            priority="low",
+                            tags=list(note.tags),
+                        )
+                        auto_queued.append(link_name)
+                    except Exception:
+                        pass  # already exists or slug collision
 
             vault.rebuild_index()
             vault.rebuild_backlinks()
