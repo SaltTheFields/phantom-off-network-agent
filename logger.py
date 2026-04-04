@@ -26,12 +26,16 @@ def unregister_global_hook(fn) -> None:
         _global_hooks.remove(fn)
 
 
+# Global shared state for the logger to prevent handle thrashing in multi-threaded (web) environments.
+_shared_fh = None
+_shared_fh_path = None
+_fh_lock = threading.Lock()
+
 class PhantomLogger:
     def __init__(self, on_event=None):
         self._enabled = cfg.get("logging.enabled", True)
         self._log_dir = cfg.get("logging.log_dir", "logs")
         self._level = cfg.get("logging.level", "INFO")
-        self._fh = None
         self._run_start_ts = None
         self._on_event = on_event  # optional callback(data: dict) for live streaming
 
@@ -41,10 +45,61 @@ class PhantomLogger:
         try:
             os.makedirs(self._log_dir, exist_ok=True)
             self._rotate_old_logs()
-            log_path = self._log_path()
-            self._fh = open(log_path, "a", encoding="utf-8", buffering=1)
+            self._ensure_fh()
         except Exception:
             self._enabled = False
+
+    def _ensure_fh(self):
+        global _shared_fh, _shared_fh_path
+        with _fh_lock:
+            path = self._log_path()
+            if _shared_fh is None or _shared_fh_path != path:
+                if _shared_fh:
+                    try: _shared_fh.close()
+                    except: pass
+                _shared_fh = open(path, "a", encoding="utf-8", buffering=1)
+                _shared_fh_path = path
+
+    def _write(self, data: dict):
+        if not self._enabled:
+            return
+        self._ensure_fh()
+        try:
+            with _fh_lock:
+                if _shared_fh:
+                    _shared_fh.write(json.dumps(data) + "\n")
+        except Exception:
+            pass
+        if self._on_event:
+            try:
+                self._on_event(data)
+            except Exception:
+                pass
+        for hook in _global_hooks:
+            try:
+                hook(data)
+            except Exception:
+                pass
+
+    def _header(self, lines: list[str]):
+        if not self._enabled:
+            return
+        self._ensure_fh()
+        try:
+            with _fh_lock:
+                if _shared_fh:
+                    sep = "=" * 80
+                    _shared_fh.write(sep + "\n")
+                    for line in lines:
+                        _shared_fh.write(line + "\n")
+                    _shared_fh.write(sep + "\n")
+        except Exception:
+            pass
+
+    def close(self):
+        # In the new shared handle pattern, individual logger instances
+        # don't close the global handle. The OS handles cleanup on exit.
+        pass
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -71,36 +126,6 @@ class PhantomLogger:
 
     def _ts(self) -> str:
         return datetime.now().isoformat(timespec="seconds")
-
-    def _write(self, data: dict):
-        if not self._enabled or self._fh is None:
-            return
-        try:
-            self._fh.write(json.dumps(data) + "\n")
-        except Exception:
-            pass
-        if self._on_event:
-            try:
-                self._on_event(data)
-            except Exception:
-                pass
-        for hook in _global_hooks:
-            try:
-                hook(data)
-            except Exception:
-                pass
-
-    def _header(self, lines: list[str]):
-        if not self._enabled or self._fh is None:
-            return
-        try:
-            sep = "=" * 80
-            self._fh.write(sep + "\n")
-            for line in lines:
-                self._fh.write(line + "\n")
-            self._fh.write(sep + "\n")
-        except Exception:
-            pass
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -178,10 +203,3 @@ class PhantomLogger:
             "avg_per_topic_s": avg,
         })
 
-    def close(self):
-        try:
-            if self._fh:
-                self._fh.close()
-                self._fh = None
-        except Exception:
-            pass

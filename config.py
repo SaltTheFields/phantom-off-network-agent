@@ -5,6 +5,7 @@ _DEFAULTS = {
     "ollama": {
         "base_url": "http://localhost:11434",
         "model": "llama3.2",
+        "chat_model": "llama3.1:8b",
         "timeout": 120,
         "temperature": 0.7,
         "context_window": 4096,
@@ -34,6 +35,8 @@ _DEFAULTS = {
         "generate_daily_digest": True,
         "silent_mode": True,
         "max_parallel_workers": 2,
+        "depth_bias": 0.3,
+        "depth_soft_cap": 5,
     },
     "context": {
         "path": "context.md",

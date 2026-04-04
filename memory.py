@@ -377,6 +377,42 @@ class MemoryStore:
             conn.close()
             return count
 
-    def close(self):
-        # connections are closed per-call now
-        pass
+    def hybrid_search(self, query: str, limit: int = 10) -> list[dict]:
+        """
+        Search memories using both keyword (SQL LIKE) and semantic vector search.
+        Returns a deduplicated list of fact dicts.
+        """
+        results = []
+        seen_ids = set()
+
+        # 1. Semantic Search (if available)
+        try:
+            semantic = self.search(query, limit=limit)
+            for r in semantic:
+                results.append(r)
+                seen_ids.add(r["id"])
+        except Exception:
+            pass
+
+        # 2. Keyword Search
+        try:
+            conn = sqlite3.connect(self._db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            # Split query into words for basic multi-word matching
+            words = [w.strip() for w in query.split() if len(w.strip()) > 2]
+            if words:
+                like_clause = " OR ".join(["content LIKE ?" for _ in words])
+                params = [f"%{w}%" for w in words]
+                cur.execute(f"SELECT * FROM memories WHERE {like_clause} LIMIT ?", params + [limit])
+                for row in cur.fetchall():
+                    d = dict(row)
+                    if d["id"] not in seen_ids:
+                        d["semantic_score"] = 0.0
+                        results.append(d)
+                        seen_ids.add(d["id"])
+            conn.close()
+        except Exception:
+            pass
+
+        return results[:limit]

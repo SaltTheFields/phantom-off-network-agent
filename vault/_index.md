@@ -1,33 +1,153 @@
 ---
 type: index
-updated: 2026-03-29
-total_notes: 18
+updated: 2026-04-03
+total_notes: 138
 ---
 
 # Phantom Research Vault
 
-> 18 topics tracked — 15 active, 0 queued, 3 archived
+> 138 topics tracked — 112 active, 0 queued, 26 archived
 
 ## Active
 
-- [[Aleister Crowley]] (person, medium) `magick` `occult` `thelema` `spelling-distinction` `crowley` — *2026-03-29*
-- [[Cup and Ball Across Cultures]] (research, high) `cup-and-ball` `egypt` `rome` `india` `china` `folk-magic` `thimblerig` — *2026-03-29*
-- [[Dai Vernon]] (person, low) `sleight-of-hand` `card-magic` `20th-century` `technique` — *2026-03-29*
-- [[Discoverie of Witchcraft 1584]] (research, high) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-03-29*
-- [[Expert at the Card Table 1902]] (research, medium) `erdnase` `sleight-of-hand` `card-technique` `1902` `primary-source` — *2026-03-29*
-- [[Grimoire Tradition and Manual Skill]] (research, medium) `grimoire` `key-of-solomon` `gesture` `ritual` `performance` `crossover` — *2026-03-29*
-- [[Jean-Eugene Robert-Houdin]] (person, medium) `stage-magic` `france` `19th-century` `conjuring` `performance` — *2026-03-29*
-- [[Magic Terminology Etymology]] (research, medium) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-03-29*
-- [[Misdirection Theory and History]] (concept, medium) `misdirection` `attention` `deception` `rhetoric` `psychology` — *2026-03-29*
-- [[Occult and Ritual Magic]] (concept, high) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-29*
-- [[Performer vs Supernatural Framing]] (research, medium) `supernatural` `fraud` `debunking` `spiritualism` `houdini` `maskelyne` — *2026-03-29*
-- [[Reginald Scot]] (person, high) `discoverie-of-witchcraft` `1584` `conjuring` `history` `primary-source` — *2026-03-29*
-- [[Sleight of Hand]] (concept, high) `sleight-of-hand` `prestidigitation` `legerdemain` `manual-dexterity` — *2026-03-29*
-- [[Stage Magic and Conjuring]] (concept, high) `magic` `performance` `illusion` `conjuring` `history` — *2026-03-29*
-- [[The Three Traditions]] (research, medium) — *2026-03-29*
+- [[Aerial Escape]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Alchemy]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-01*
+- [[Alchemy in Modern Science]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-01*
+- [[Aleister Crowley]] (person, medium) `magick` `occult` `thelema` `spelling-distinction` `crowley` — *2026-04-03*
+- [[Ancient Egypt]] (research, low) `cup-and-ball` `egypt` `rome` `india` `china` `folk-magic` `thimblerig` — *2026-04-01*
+- [[Ancient Greece]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Ancient Greek Philosophy]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Aristotelianism]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-03*
+- [[Aristotle]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Astrology]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Astronomy]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Astrophysics]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Bondage]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Buddhism]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-01*
+- [[Buddhist Canon]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-31*
+- [[Card Manipulation]] (research, low) `erdnase` `sleight-of-hand` `card-technique` `1902` `primary-source` — *2026-03-31*
+- [[Ceremonial Magic]] (concept, low) `sleight-of-hand` `prestidigitation` `legerdemain` `manual-dexterity` — *2026-04-03*
+- [[Chaos Magic]] (concept, low) `sleight-of-hand` `prestidigitation` `legerdemain` `manual-dexterity` — *2026-04-03*
+- [[Chemistry]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-01*
+- [[Close Up Magic]] (research, medium) — *2026-03-31*
+- [[Close-Up Card Tricks]] (research, low) — *2026-03-31*
+- [[Conjuring]] (research, low) — *2026-03-31*
+- [[Counterculture]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-31*
+- [[Cultural Anthropology]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-01*
+- [[Cultural History]] (research, low) `cup-and-ball` `egypt` `rome` `india` `china` `folk-magic` `thimblerig` — *2026-04-02*
+- [[Cultural Identity]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-02*
+- [[Cup and Ball Across Cultures]] (research, high) `cup-and-ball` `egypt` `rome` `india` `china` `folk-magic` `thimblerig` — *2026-04-01*
+- [[Dai Vernon]] (person, low) `sleight-of-hand` `card-magic` `20th-century` `technique` — *2026-03-30*
+- [[Discoverie of Witchcraft 1584]] (research, high) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Egyptian Mythology]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Emergency Escape Breathing Apparatus]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Escape Artistry]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Escape Techniques]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Escape Velocities]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Escapology]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Esoteric Christianity]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-31*
+- [[Esoteric Thought]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Esotericism]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-01*
+- [[European Enlightenment]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Existentialism]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Expert at the Card Table 1902]] (research, medium) `erdnase` `sleight-of-hand` `card-technique` `1902` `primary-source` — *2026-03-31*
+- [[Folk Magic]] (concept, low) `sleight-of-hand` `prestidigitation` `legerdemain` `manual-dexterity` — *2026-04-03*
+- [[Folklore]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-01*
+- [[Greek Philosophy]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Grimoire Tradition and Manual Skill]] (research, medium) `grimoire` `key-of-solomon` `gesture` `ritual` `performance` `crossover` — *2026-04-01*
+- [[Harry Houdini]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Heresy in Medieval Europe]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Hermeticism]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[High Magic]] (concept, low) `sleight-of-hand` `prestidigitation` `legerdemain` `manual-dexterity` — *2026-04-03*
+- [[Houdini]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-01*
+- [[Illusion]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-01*
+- [[Illusionism]] (concept, low) `sleight-of-hand` `prestidigitation` `legerdemain` `manual-dexterity` — *2026-03-31*
+- [[Information Warfare]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Jean-Eugene Robert-Houdin]] (person, medium) `stage-magic` `france` `19th-century` `conjuring` `performance` — *2026-03-31*
+- [[Kabbalah]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-01*
+- [[Language Acquisition]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-01*
+- [[Language Contact]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-01*
+- [[Linguistics]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-01*
+- [[Magic]] (concept, low) `sleight-of-hand` `prestidigitation` `legerdemain` `manual-dexterity` — *2026-04-03*
+- [[Magic History]] (research, low) `erdnase` `sleight-of-hand` `card-technique` `1902` `primary-source` — *2026-03-31*
+- [[Magic Terminology Etymology]] (research, medium) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-01*
+- [[Magick]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-02*
+- [[Medieval Philosophy]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Medieval Theology]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Meditation]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-31*
+- [[Mentalism]] (research, low) — *2026-03-31*
+- [[Metaphysics]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Mindful Movement]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-02*
+- [[Mindfulness]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-31*
+- [[Misdirection Theory and History]] (concept, medium) `misdirection` `attention` `deception` `rhetoric` `psychology` — *2026-04-03*
+- [[Mysticism]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-01*
+- [[Mythology]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-01*
+- [[Neoplatonism]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Neuroscience]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[New Age Movement]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-02*
+- [[Nirvana]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-01*
+- [[Occult and Ritual Magic]] (concept, high) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-31*
+- [[Occultism]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Performer vs Supernatural Framing]] (research, medium) `supernatural` `fraud` `debunking` `spiritualism` `houdini` `maskelyne` — *2026-03-31*
+- [[Philosophy of Mind]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Philosophy of Science]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-03*
+- [[Plato]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Propaganda]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Psychological Operations]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Psychological Warfare]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Psychology]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Psychology of Culture]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-02*
+- [[Reginald Scot]] (person, high) `discoverie-of-witchcraft` `1584` `conjuring` `history` `primary-source` — *2026-04-01*
+- [[Research Task: Occult and Ritual Magic]] (research, medium) — *2026-03-31*
+- [[Ritual]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-31*
+- [[Scholasticism]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Scientific Method]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-03*
+- [[Self-Awareness]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-31*
+- [[Self-Regulation]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-02*
+- [[Sleight of Hand]] (concept, high) `sleight-of-hand` `prestidigitation` `legerdemain` `manual-dexterity` — *2026-04-02*
+- [[Social Commentary]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-02*
+- [[Social Influence]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Social Psychology]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-01*
+- [[Sociolinguistics]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-02*
+- [[Sociology]] (research, low) `etymology` `magic` `magick` `sorcery` `thaumaturgy` `witchcraft` `terminology` — *2026-04-02*
+- [[Socrates]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Spiritual Alchemy]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-02*
+- [[Spirituality]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-31*
+- [[Stage Magic and Conjuring]] (concept, high) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-01*
+- [[Symbolism]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-03-31*
+- [[The Three Traditions]] (research, medium) — *2026-03-30*
+- [[Thelema]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-01*
+- [[Theosophy]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-02*
+- [[Theurgy]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Virtue Ethics]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Western Philosophy]] (concept, low) `magick` `magik` `occult` `ritual` `ceremonial` `hermeticism` — *2026-04-03*
+- [[Witch Trials History]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-03*
 
 ## Archived
 
+- [[AI Ethics]] (research, low) — *2026-04-02*
+- [[AI Governance]] (research, low) — *2026-04-02*
+- [[Argumentation Techniques]] (research, low) — *2026-04-02*
+- [[Artificial Intelligence]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-01*
+- [[Bias in AI]] (research, low) — *2026-04-02*
 - [[Bitcoin price predictions]] (research, medium) — *2026-03-28*
+- [[Cognitive Biases]] (research, low) — *2026-04-02*
+- [[Cognitive Psychology]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-01*
+- [[Cognitive Science]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-01*
+- [[Critical Thinking]] (research, low) — *2026-04-02*
+- [[Critical Thinking Strategies]] (research, low) — *2026-04-02*
+- [[Decision-Making]] (research, low) — *2026-04-02*
+- [[Deep Learning]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-01*
+- [[Disinformation]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Emotional Intelligence]] (research, low) — *2026-04-02*
+- [[Epistemology]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Ethics]] (research, low) `reginald-scot` `primary-source` `conjuring` `witchcraft` `1584` — *2026-04-02*
+- [[Ethics in AI]] (research, medium) — *2026-04-02*
+- [[Fairness in AI]] (research, low) — *2026-04-02*
+- [[Fairness in Machine Learning]] (research, low) — *2026-04-02*
+- [[Groupthink]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-02*
+- [[Groupthink Prevention Strategies]] (research, medium) — *2026-04-02*
+- [[Machine Learning]] (concept, low) `magic` `performance` `illusion` `conjuring` `history` — *2026-04-01*
 - [[Obsidian PKM Best Practices]] (research, medium) `pkm` `obsidian`
+- [[Responsible AI Development]] (research, low) — *2026-04-02*
 - [[The Future of Local LLMs]] (research, high) `local` `ai`

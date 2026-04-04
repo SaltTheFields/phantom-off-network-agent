@@ -357,19 +357,27 @@ class TopicManager:
     def weighted_pick(self, candidates: list[Note]) -> Note | None:
         """
         Pick one topic using weighted random selection.
-        - Depth-0 / never-run topics are always guaranteed to run first (priority-sorted among themselves)
-        - Once all depth-0 topics are done, exponential decay + soft cap governs the rest
-        - Every topic always has a non-zero chance (no starvation)
+        - Fresh topics (depth 0) are prioritized but don't completely starve depth-1+ topics.
+        - Once all depth-0 topics are done, exponential decay + soft cap governs the rest.
         """
         if not candidates:
             return None
         if len(candidates) == 1:
             return candidates[0]
 
-        # Fast path: if any depth-0 or never-researched topics exist, pick the
-        # highest-priority one immediately — don't randomise, just clear the backlog.
         fresh = [n for n in candidates if n.research_depth == 0 or not n.last_researched]
+        stale = [n for n in candidates if n not in fresh]
+        
+        # Depth Bias: ensure deep research has a chance (~30% default)
+        depth_bias = cfg.get("schedule.depth_bias", 0.3)
+        
+        # If we have both, roll for bias
+        if fresh and stale and random.random() < depth_bias:
+            # Pick from stale pool
+            fresh = [] # Force selection from stale by clearing fresh for this roll
+
         if fresh:
+            # Fast path for clearing backlog
             fresh.sort(key=lambda n: (PRIORITY_ORDER.get(n.priority, 1), n.created or ""))
             return fresh[0]
 
@@ -379,15 +387,16 @@ class TopicManager:
         def _weight(note: Note) -> float:
             base = PRIORITY_WEIGHT.get(note.priority, 3)
             # Exponential decay: 0.7^depth
-            # depth 1→0.70, 2→0.49, 3→0.34, 4→0.24, 5→0.17, 6→0.12
             decay = 0.7 ** note.research_depth
             # Hard soft-cap penalty: topics at depth >= cap are heavily deprioritised
             if note.research_depth >= soft_cap:
                 decay *= 0.1
             return max(0.01, base * decay)
 
-        weights = [_weight(n) for n in candidates]
-        return random.choices(candidates, weights=weights, k=1)[0]
+        # Use all remaining candidates (which is stale if we rolled stale, or all if no fresh)
+        pool = candidates if not fresh else fresh
+        weights = [_weight(n) for n in pool]
+        return random.choices(pool, weights=weights, k=1)[0]
 
     def increment_depth(self, slug: str) -> int:
         """Increment research_depth for a topic. Returns new depth."""

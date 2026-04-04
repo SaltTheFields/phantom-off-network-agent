@@ -842,9 +842,8 @@ def _format_log_line(raw: str) -> str:
 
 
 def _nav(active: str = "") -> str:
-    pages = [("/", "Dashboard"), ("/vault", "Vault"), ("/graph", "Graph"),
-             ("/topics", "Topics"), ("/sources", "Sources"), ("/search", "Search"),
-             ("/gaps", "Gaps"), ("/memory", "Memory"), ("/agents", "Agents"), ("/settings", "Settings")]
+    pages = [("/", "Dashboard"), ("/vault", "Vault"), ("/chat", "Chat"), ("/graph", "Graph"),
+             ("/topics", "Topics"), ("/memory", "Memory"), ("/agents", "Agents"), ("/settings", "Settings")]
     links = "".join(
         f'<a href="{h}" class="{"active" if label.lower() == active else ""}">{label}</a>'
         for h, label in pages
@@ -1083,6 +1082,9 @@ def dashboard():
         f'<div class="btn-group"><form method="post" action="/run"><button class="btn-green" {run_dis}>{run_label}</button></form>'
         f'<span class="btn-desc">Process the queue</span></div>'
         
+        f'<div class="btn-group"><button class="btn-dim" onclick="document.getElementById(\'dash-new-topic\').showModal()">+ New Topic</button>'
+        f'<span class="btn-desc">Quick add to queue</span></div>'
+
         f'<div class="btn-group"><form method="post" action="/vault/rebuild"><button class="btn-dim">⟳ Rebuild Index</button></form>'
         f'<span class="btn-desc">Update backlinks and index</span></div>'
         
@@ -1344,7 +1346,27 @@ setInterval(function(){
 
 </script>"""
 
-    left  = f'{active_panel}{controls}{queue_section}'
+    # ── New topic dialog
+    new_topic_dialog = (
+        '<dialog id="dash-new-topic" style="background:#0f0f0f;color:#ccc;border:1px solid #1c1c1c;border-radius:6px;padding:24px;margin:auto">'
+        '<h2>+ Add Research Topic</h2>'
+        '<form method="post" action="/topics/new">'
+        '<div class="row"><label>Name</label><input type="text" name="name" required style="width:300px"></div>'
+        '<div class="row"><label>Type</label>'
+        '<select name="type"><option>research</option><option>tech</option><option>person</option>'
+        '<option>event</option><option>concept</option></select>'
+        '<label style="margin-left:14px">Priority</label>'
+        '<select name="priority"><option>medium</option><option>high</option><option>low</option></select></div>'
+        '<div class="row"><label>Tags</label><input type="text" name="tags" placeholder="comma separated" style="width:300px"></div>'
+        '<input type="hidden" name="redirect" value="/">'
+        '<div style="margin-top:20px;display:flex;gap:10px">'
+        '<button type="submit" class="btn-green">Create Topic</button>'
+        '<button type="button" class="btn-dim" onclick="this.closest(\'dialog\').close()">Cancel</button>'
+        '</div>'
+        '</form></dialog>'
+    )
+
+    left  = f'{active_panel}{controls}{queue_section}{new_topic_dialog}'
     right = f'{live_section}{depth_overview}{log_section}'
 
     return _page("Dashboard", (
@@ -1353,6 +1375,129 @@ setInterval(function(){
         f'<div class="grid2"><div>{left}</div><div>{right}</div></div>'
         f'{js}'
     ), "dashboard")
+
+
+# ── Chat ──────────────────────────────────────────────────────────────────────
+
+@app.get("/chat", response_class=HTMLResponse)
+def chat_page():
+    chat_js = """<script>
+async function sendMessage(e) {
+  if(e) e.preventDefault();
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if(!msg) return;
+  
+  const box = document.getElementById('chat-box');
+  const userDiv = document.createElement('div');
+  userDiv.className = 'chat-msg chat-user';
+  userDiv.textContent = msg;
+  box.appendChild(userDiv);
+  input.value = '';
+  box.scrollTop = box.scrollHeight;
+
+  const botDiv = document.createElement('div');
+  botDiv.className = 'chat-msg chat-bot';
+  botDiv.textContent = 'Thinking...';
+  box.appendChild(botDiv);
+  box.scrollTop = box.scrollHeight;
+
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: msg})
+    });
+    const data = await res.json();
+    botDiv.innerHTML = data.reply_html || data.reply;
+    box.scrollTop = box.scrollHeight;
+  } catch(x) {
+    botDiv.textContent = 'Error: ' + x;
+  }
+}
+</script>"""
+    style = """<style>
+#chat-box {
+  background:#0c0c0c; border:1px solid #1a1a1a; border-radius:6px;
+  height:calc(100vh - 300px); min-height:400px;
+  overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:16px;
+  margin-bottom:16px;
+}
+.chat-msg {
+  max-width:85%; padding:12px 16px; border-radius:8px; line-height:1.6;
+  font-size:13px; position:relative;
+}
+.chat-user {
+  align-self:flex-end; background:var(--accent-bg); border:1px solid var(--accent-border);
+  color:#fff; border-bottom-right-radius:2px;
+}
+.chat-bot {
+  align-self:flex-start; background:#161616; border:1px solid #222;
+  color:#ccc; border-bottom-left-radius:2px;
+}
+.chat-bot strong { color:var(--accent-bright); }
+.chat-bot a { color:var(--accent); text-decoration:underline; }
+.chat-bot pre { background:#0a0a0a; padding:10px; margin:8px 0; border-radius:4px; font-size:12px; }
+</style>"""
+    
+    body = f"""
+{style}
+<h1>Research Chat</h1>
+<div id="chat-box">
+  <div class="chat-msg chat-bot">Hello. I have access to your vault and all researched memories. How can I help today?</div>
+</div>
+<form onsubmit="sendMessage(event)" style="display:flex;gap:10px">
+  <input type="text" id="chat-input" placeholder="Ask about your research..." 
+         style="flex:1; padding:12px; font-size:14px; background:#111; border:1px solid #333; color:#fff; border-radius:6px" autocomplete="off">
+  <button type="submit" class="btn-green" style="padding:0 24px">Send</button>
+</form>
+{chat_js}
+"""
+    return _page("Chat", body, "chat", no_refresh=True)
+
+
+@app.post("/api/chat")
+async def api_chat(request: Request):
+    data = await request.json()
+    msg = data.get("message", "").strip()
+    if not msg:
+        return JSONResponse({"reply": "No message provided."})
+
+    # ── RAG Pipeline ──────────────────────────────────────────────────────────
+    # 1. Search semantic memory
+    results = _memory.hybrid_search(msg, limit=8)
+    facts = [r["content"] for r in results]
+    
+    # 2. Find relevant vault notes
+    relevant_notes = []
+    msg_low = msg.lower()
+    for n in _topics.list_topics():
+        if n.slug in msg_low or n.name.lower() in msg_low:
+            relevant_notes.append(n)
+    
+    # 3. Build context
+    context = "## Relevant Research Facts\\n" + ("\\n".join(f"- {f}" for f in facts) if facts else "None found.")
+    if relevant_notes:
+        context += "\\n\\n## Relevant Vault Notes\\n"
+        for rn in relevant_notes[:3]:
+            context += f"### {rn.name}\\n{rn.body[:1500]}\\n---\\n"
+
+    system_prompt = (
+        "You are the Phantom Research Assistant. Use the provided context from the user's local research "
+        "vault and memories to answer their question. If the information isn't in the context, "
+        "answer based on your general knowledge but note that it wasn't found in the vault.\\n\\n"
+        "Cite vault notes using [[WikiLinks]] when possible.\\n\\n"
+        f"CONTEXT:\\n{context}"
+    )
+
+    from llm import chat
+    model = cfg.get("ollama.chat_model") or cfg.get("ollama.model")
+    try:
+        reply = chat([{"role": "user", "content": msg}], system_prompt, model=model)
+        reply_html = _render_markdown(reply)
+        return JSONResponse({"reply": reply, "reply_html": reply_html})
+    except Exception as e:
+        return JSONResponse({"reply": f"Error calling LLM: {e}"}, status_code=500)
 
 
 # ── Sources audit ──────────────────────────────────────────────────────────────
@@ -3092,9 +3237,16 @@ canvas.addEventListener('wheel',function(e){{
   e.preventDefault();
   var rect=canvas.getBoundingClientRect();
   var mx=e.clientX-rect.left,my=e.clientY-rect.top;
+  
+  var oldScale = vs;
   var d=e.deltaY>0?0.88:1.13;
   vs=Math.max(0.25,Math.min(6,vs*d));
-  vx=mx-(mx-vx)*d;vy=my-(my-vy)*d;
+  
+  // Calculate actual ratio (vs / oldScale) to ensure math stays consistent 
+  // even when vs is clamped by min/max.
+  var actualRatio = vs / oldScale;
+  vx = mx - (mx - vx) * actualRatio;
+  vy = my - (my - vy) * actualRatio;
 }},{{passive:false}});
 
 /* mouse */
