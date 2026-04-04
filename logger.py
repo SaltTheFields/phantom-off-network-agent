@@ -6,6 +6,7 @@ Never crashes the agent — all writes are wrapped in try/except.
 import json
 import os
 import time
+import threading
 from datetime import datetime, date, timedelta
 
 from config import cfg

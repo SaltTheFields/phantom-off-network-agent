@@ -416,3 +416,7 @@ class MemoryStore:
             pass
 
         return results[:limit]
+
+    def close(self):
+        # connections are closed per-call now, but we keep this for API compatibility
+        pass
